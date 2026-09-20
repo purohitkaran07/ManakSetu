@@ -6,9 +6,9 @@ echo =======================================================
 
 set "PATH=D:\JIET\Node;%PATH%"
 
-start "ManakSetu Backend (FastAPI)" cmd /k "cd /d D:\ManakSetu\backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+start "ManakSetu Backend (FastAPI)" cmd /k "cd /d "%~dp0backend" && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
 
-start "ManakSetu Frontend (Vite)" cmd /k "cd /d D:\ManakSetu\frontend && npm run dev"
+start "ManakSetu Frontend (Vite)" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 
 echo.
 echo Both servers have been launched in separate windows!

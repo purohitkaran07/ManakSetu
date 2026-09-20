@@ -9,38 +9,11 @@ import {
   HealthResponse,
 } from '../types';
 
-/**
- * Centralized API Base URL Configuration:
- * - If VITE_API_URL is configured (e.g., in production on Vercel: "https://manaksetu-api.onrender.com"):
- *   normalizes trailing slashes and ensures the path ends with "/api".
- * - If VITE_API_URL is omitted or empty (local development):
- *   falls back to "/api", which is proxied by Vite to the local FastAPI backend.
- */
-const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-
-export const API_BASE_URL = rawApiUrl
-  ? (rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`)
-  : '/api';
-
-export const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+const apiClient = axios.create({
+  baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
   },
-});
-
-// Guard against duplicate /api in path when baseURL already ends with /api
-apiClient.interceptors.request.use((config) => {
-  if (config.url) {
-    if (config.baseURL?.endsWith('/api')) {
-      if (config.url === '/api') {
-        config.url = '';
-      } else if (config.url.startsWith('/api/')) {
-        config.url = config.url.substring(4);
-      }
-    }
-  }
-  return config;
 });
 
 export const api = {

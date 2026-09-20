@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from app.schemas.standard import StandardResponse
 from app.schemas.requirement import StructuredRequirement
@@ -28,5 +28,3 @@ class AnalysisResponse(BaseModel):
     candidate_standards: List[RecommendationItem]  # Evaluated candidates / related standards
     version_alerts: List[VersionAlertItem]
     created_at: str
-    timing: Optional[Dict[str, float]] = None
-

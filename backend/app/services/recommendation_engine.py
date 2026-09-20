@@ -6,12 +6,12 @@ Separates CANDIDATES from RECOMMENDATIONS.
 """
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Any, Optional
-import time
-import logging
 import uuid
 from datetime import datetime, timezone
-import numpy as np
+import logging
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models.standard import Standard
 from app.models.relationship import StandardRelationship
@@ -26,8 +26,6 @@ from app.schemas.recommendation import (
 from app.ai.requirement_analyzer import get_requirement_analyzer
 from app.services.semantic_engine import get_semantic_retriever
 from app.services.version_service import detect_version_alerts
-
-logger = logging.getLogger("manaksetu.analysis")
 
 
 class BaseRecommendationEngine(ABC):
@@ -83,45 +81,22 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
         analyzer = get_requirement_analyzer(provider)
         return analyzer.analyze(text)
 
-    def retrieve_candidates_with_timing(
-        self,
-        standards: List[Standard],
-        structured_req: StructuredRequirement,
-        raw_text: str,
-    ) -> Tuple[List[Tuple[Standard, float]], Dict[str, float]]:
-        retriever = get_semantic_retriever()
-        t0 = time.perf_counter()
-        embeddings_matrix, ids = retriever.vector_store.get_or_build_embeddings(standards)
-        t_cache = (time.perf_counter() - t0) * 1000
-
-        query_text = retriever.build_query_text(structured_req, raw_text)
-        t0 = time.perf_counter()
-        query_vector = retriever.vector_store.encode_query(query_text)
-        t_encode = (time.perf_counter() - t0) * 1000
-
-        similarities = np.dot(embeddings_matrix, query_vector)
-        standards_by_id = {s.id: s for s in standards}
-
-        result = []
-        for std_id, score in zip(ids, similarities):
-            std = standards_by_id.get(std_id)
-            if std:
-                result.append((std, float(score)))
-
-        result.sort(key=lambda x: x[1], reverse=True)
-        return result, {
-            "vector_cache_ms": t_cache,
-            "embedding_generation_ms": t_encode,
-        }
-
     def retrieve_candidates(
         self,
         standards: List[Standard],
         structured_req: StructuredRequirement,
         raw_text: str,
     ) -> List[Tuple[Standard, float]]:
-        pairs, _ = self.retrieve_candidates_with_timing(standards, structured_req, raw_text)
-        return pairs
+        retriever = get_semantic_retriever()
+        scored_pairs = retriever.retrieve(standards, structured_req, raw_text, top_k=len(standards))
+        standards_by_id = {s.id: s for s in standards}
+
+        result = []
+        for std_id, score in scored_pairs:
+            std = standards_by_id.get(std_id)
+            if std:
+                result.append((std, score))
+        return result
 
     def detect_version_alerts(
         self,
@@ -223,34 +198,21 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
         )
 
     def analyze(self, db: Session, text: str, provider: str = "none") -> AnalysisResponse:
-        t_total_start = time.perf_counter()
-
-        # Step 0: Database Query
-        t_db_start = time.perf_counter()
         all_standards = db.query(Standard).all()
         all_relationships = db.query(StandardRelationship).all()
-        t_db_query = time.perf_counter() - t_db_start
 
         # Step 1: Extract structured requirement
-        t_req_start = time.perf_counter()
         structured_req = self.extract_requirements(text, provider=provider)
-        t_req_extraction = time.perf_counter() - t_req_start
 
         # Step 2: Detect version alerts strictly from explicit references
-        t_valert_start = time.perf_counter()
         version_alerts = self.detect_version_alerts(
             structured_req.explicitly_mentioned_standards,
             all_standards,
             all_relationships,
         )
-        t_valerts = time.perf_counter() - t_valert_start
 
-        # Step 3: Semantic retrieval of candidates (with vector loading and embedding generation breakdown)
-        t_sem_start = time.perf_counter()
-        scored_candidates, sem_breakdown = self.retrieve_candidates_with_timing(
-            all_standards, structured_req, text
-        )
-        t_semantic_retrieval = time.perf_counter() - t_sem_start
+        # Step 3: Semantic retrieval of candidates
+        scored_candidates = self.retrieve_candidates(all_standards, structured_req, text)
 
         # Step 4: Determine Primary Recommendations vs Candidate Standards
         # Primary recommendations:
@@ -283,13 +245,13 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
                             # Assign appropriate relationship score
                             candidate_pairs.append((ref_std, 0.40))
 
-        # Step 5 & 6: Evaluate evidence for primary recommendations and candidate standards
-        t_eval_start = time.perf_counter()
+        # Step 5: Evaluate evidence for primary recommendations
         recommendations: List[RecommendationItem] = []
         for std, score in primary_pairs:
             item = self.evaluate_evidence(std, structured_req, score, all_relationships, primary_ids)
             recommendations.append(item)
 
+        # Step 6: Evaluate evidence for candidate standards
         candidates: List[RecommendationItem] = []
         for std, score in candidate_pairs:
             item = self.evaluate_evidence(std, structured_req, score, all_relationships, primary_ids)
@@ -298,10 +260,8 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
         # Sort recommendations and candidates by relevance descending
         recommendations.sort(key=lambda x: x.relevance, reverse=True)
         candidates.sort(key=lambda x: x.relevance, reverse=True)
-        t_evidence_eval = time.perf_counter() - t_eval_start
 
         # Step 7: Persist analysis to database
-        t_persist_start = time.perf_counter()
         analysis_id = str(uuid.uuid4())
         created_at_dt = datetime.now(timezone.utc)
         created_at_str = created_at_dt.isoformat()
@@ -314,35 +274,14 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
             version_alerts=[v.model_dump() for v in version_alerts],
             created_at=created_at_dt,
         )
-        db.add(analysis_record)
-        db.commit()
-        t_db_persist = time.perf_counter() - t_persist_start
-
-        t_total = time.perf_counter() - t_total_start
-
-        timing_report = {
-            "requirement_extraction_ms": round(t_req_extraction * 1000, 2),
-            "embedding_generation_ms": round(sem_breakdown.get("embedding_generation_ms", 0.0), 2),
-            "vector_loading_cache_ms": round(sem_breakdown.get("vector_cache_ms", 0.0), 2),
-            "semantic_retrieval_ms": round(t_semantic_retrieval * 1000, 2),
-            "database_query_ms": round(t_db_query * 1000, 2),
-            "evidence_evaluation_ms": round(t_evidence_eval * 1000, 2),
-            "database_persist_ms": round(t_db_persist * 1000, 2),
-            "total_analysis_ms": round(t_total * 1000, 2),
-        }
-
-        logger.info(
-            "[ANALYSIS TIMING] total=%.2fms | req_extract=%.2fms | db_query=%.2fms | "
-            "vec_cache=%.2fms | embed_gen=%.2fms | semantic_retrieval=%.2fms | evidence_eval=%.2fms | db_persist=%.2fms",
-            timing_report["total_analysis_ms"],
-            timing_report["requirement_extraction_ms"],
-            timing_report["database_query_ms"],
-            timing_report["vector_loading_cache_ms"],
-            timing_report["embedding_generation_ms"],
-            timing_report["semantic_retrieval_ms"],
-            timing_report["evidence_evaluation_ms"],
-            timing_report["database_persist_ms"],
-        )
+        try:
+            db.add(analysis_record)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning(
+                f"Could not persist analysis record to database (read-only filesystem or database write error): {e}"
+            )
 
         return AnalysisResponse(
             id=analysis_id,
@@ -352,7 +291,6 @@ class ManakSetuRecommendationEngine(BaseRecommendationEngine):
             candidate_standards=candidates,
             version_alerts=version_alerts,
             created_at=created_at_str,
-            timing=timing_report,
         )
 
 

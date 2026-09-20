@@ -19,12 +19,8 @@ import { GraphResponse, StandardDetail, GraphNodeData } from '../types';
 import {
   Network,
   Search,
-  Filter,
   RotateCcw,
-  Layers,
   Info,
-  Maximize2,
-  CheckCircle2,
 } from 'lucide-react';
 
 export const KnowledgeGraphPage: React.FC = () => {
@@ -70,23 +66,25 @@ export const KnowledgeGraphPage: React.FC = () => {
         label: e.label,
         animated: e.animated,
         style: {
-          stroke: e.label === 'SUPERSEDES' ? '#F59E0B' : '#2563EB',
-          strokeWidth: 2.5,
+          stroke: e.label === 'SUPERSEDES' ? '#F59E0B' : '#0067C5',
+          strokeWidth: 2,
         },
         labelStyle: {
-          fontSize: 10,
-          fontWeight: 700,
-          fill: e.label === 'SUPERSEDES' ? '#B45309' : '#1D4ED8',
+          fontSize: 9,
+          fontWeight: 800,
+          fill: e.label === 'SUPERSEDES' ? '#B45309' : '#0067C5',
         },
         labelBgStyle: {
           fill: '#FFFFFF',
           fillOpacity: 0.95,
           rx: 4,
           ry: 4,
+          stroke: '#E2E8F0',
+          strokeWidth: 1,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: e.label === 'SUPERSEDES' ? '#F59E0B' : '#2563EB',
+          color: e.label === 'SUPERSEDES' ? '#F59E0B' : '#0067C5',
         },
       }));
 
@@ -143,22 +141,22 @@ export const KnowledgeGraphPage: React.FC = () => {
   }, [nodes, searchQuery]);
 
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col bg-slate-100 overflow-hidden relative">
+    <div className="h-[calc(100vh-120px)] flex flex-col bg-[#F8FAFC] overflow-hidden relative">
       {/* Top Filter & Toolbar Strip */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 z-10 shadow-sm">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 z-10 shadow-2xs">
         <div className="flex items-center space-x-3">
-          <div className="p-1.5 rounded-lg bg-blue-100 text-blue-700">
+          <div className="p-1.5 rounded-lg bg-blue-50 text-[#0067C5]">
             <Network className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-              Standards Knowledge Graph
-              <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                Live SQLite
+            <h1 className="text-xs sm:text-sm font-bold text-[#0B192C] flex items-center gap-2">
+              Standards Knowledge Graph Workbench
+              <span className="text-[10px] bg-blue-50 text-[#0067C5] border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
+                Live SQLite Registry
               </span>
             </h1>
-            <p className="text-[11px] text-slate-500">
-              Explore how Indian Standards reference, supersede and relate to one another.
+            <p className="text-[10px] text-slate-500">
+              Interactive visualization of normative cross-references and version lineages.
             </p>
           </div>
         </div>
@@ -173,7 +171,7 @@ export const KnowledgeGraphPage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Highlight standard..."
-              className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs w-44"
+              className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0067C5] focus:ring-1 focus:ring-blue-100 text-xs w-40 sm:w-48"
             />
           </div>
 
@@ -181,7 +179,7 @@ export const KnowledgeGraphPage: React.FC = () => {
           <select
             value={relationshipFilter}
             onChange={(e) => setRelationshipFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
           >
             <option value="">All Relationships</option>
             <option value="REFERENCES">REFERENCES</option>
@@ -196,7 +194,7 @@ export const KnowledgeGraphPage: React.FC = () => {
               setRelationshipFilter('');
               setSearchQuery('');
             }}
-            className="inline-flex items-center px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:text-slate-900 text-xs font-semibold shadow-sm"
+            className="inline-flex items-center px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:text-slate-900 text-xs font-semibold shadow-2xs transition cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reset
           </button>
@@ -208,7 +206,7 @@ export const KnowledgeGraphPage: React.FC = () => {
         <div className="flex-1 h-full">
           {loading ? (
             <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-              <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+              <div className="w-8 h-8 border-3 border-[#0067C5] border-t-transparent rounded-full animate-spin mb-2"></div>
               <span className="text-xs font-medium">Rendering graph nodes and relationships...</span>
             </div>
           ) : error ? (
@@ -217,7 +215,7 @@ export const KnowledgeGraphPage: React.FC = () => {
                 <p className="text-xs text-red-600 font-bold">{error}</p>
                 <button
                   onClick={fetchGraph}
-                  className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white font-semibold"
+                  className="text-xs px-3 py-1.5 rounded bg-[#0067C5] text-white font-semibold"
                 >
                   Retry
                 </button>
@@ -232,7 +230,7 @@ export const KnowledgeGraphPage: React.FC = () => {
               onNodeClick={onNodeClick}
               nodeTypes={nodeTypes}
               fitView
-              fitViewOptions={{ padding: 0.25 }}
+              fitViewOptions={{ padding: 0.22 }}
               minZoom={0.3}
               maxZoom={2}
               proOptions={{ hideAttribution: true }}
@@ -240,23 +238,23 @@ export const KnowledgeGraphPage: React.FC = () => {
               <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#94A3B8" />
               <Controls className="!bottom-6 !left-6 !bg-white !border !border-slate-200 !shadow-md !rounded-xl" />
               <MiniMap
-                className="!bottom-6 !right-6 !bg-white/90 !border !border-slate-200 !shadow-md !rounded-xl overflow-hidden"
-                nodeStrokeColor="#2563EB"
+                className="!bottom-6 !right-6 !bg-white/95 !border !border-slate-200 !shadow-md !rounded-xl overflow-hidden"
+                nodeStrokeColor="#0067C5"
                 nodeColor="#EFF6FF"
               />
             </ReactFlow>
           )}
 
           {/* Floating Instructions & Legend Badge */}
-          <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-slate-200 shadow-xs text-[11px] text-slate-700 space-y-1.5 pointer-events-none">
-            <div className="font-bold text-slate-900 flex items-center">
+          <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-slate-200 shadow-sm text-[11px] text-slate-700 space-y-1.5 pointer-events-none">
+            <div className="font-bold text-[#0B192C] flex items-center">
               <Info className="w-3.5 h-3.5 mr-1 text-[#0067C5]" />
-              Graph Legend & Relationships
+              Graph Legend & Citations
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
               <span className="flex items-center text-emerald-800 font-semibold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1"></span>
-                Current Standard
+                Active Standard
               </span>
               <span className="flex items-center text-amber-800 font-semibold">
                 <span className="w-2 h-2 rounded-full bg-amber-500 mr-1"></span>
@@ -271,7 +269,7 @@ export const KnowledgeGraphPage: React.FC = () => {
               <span className="text-[#0067C5]">→ REFERENCES</span>
               <span className="text-amber-700">→ SUPERSEDES</span>
             </div>
-            <p className="text-[10px] text-slate-400">Click any standard node to inspect technical metadata</p>
+            <p className="text-[10px] text-slate-400">Click any standard node to open its technical dossier</p>
           </div>
         </div>
 

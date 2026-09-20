@@ -26,12 +26,3 @@ def retrieve_candidate_standards(
     top_k: int = 10,
 ) -> List[Tuple[int, float]]:
     return _retriever.retrieve(standards, structured_req, raw_text, top_k=top_k)
-
-
-def warmup_semantic_engine():
-    """
-    Deprecated/no-op startup hook to guarantee Render Free 512MB RAM compliance.
-    The embedding model is lazily initialized on the first /api/analyze request.
-    """
-    pass
-

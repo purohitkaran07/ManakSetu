@@ -1,51 +1,88 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { GraphNodeData } from '../../types';
-import { FileText, Shield, AlertTriangle, Cpu, Settings, Compass } from 'lucide-react';
+import {
+  FileText,
+  ShieldCheck,
+  AlertTriangle,
+  Settings,
+  FlaskConical,
+  Network,
+  Share2,
+} from 'lucide-react';
 
 export const CircularStandardNode: React.FC<NodeProps> = memo(({ data, selected }) => {
   const nodeData = data as unknown as GraphNodeData;
   const isCentral = nodeData.is_central;
   const isSuperseded = (nodeData.status || '').toLowerCase() === 'superseded';
+  const stdNum = (nodeData.standard_number || '').trim();
+  const title = (nodeData.title || '').toLowerCase();
 
-  const getNodeIcon = () => {
-    if (isSuperseded) return <AlertTriangle className="w-5 h-5 text-amber-500" />;
-    const title = (nodeData.title || '').toLowerCase();
-    const stdNum = (nodeData.standard_number || '').toLowerCase();
-    if (stdNum.includes('part 2') || title.includes('particular')) {
-      return <Settings className="w-5 h-5 text-blue-600" />;
+  // Determine specific node role matching reference image
+  const getNodeConfig = () => {
+    if (isCentral || stdNum.includes('2082')) {
+      return {
+        number: 'IS 2082',
+        subtitle: 'Product Standard',
+        icon: <FileText className="w-5 h-5 text-[#0067C5]" />,
+        isCenter: true,
+      };
     }
-    if (stdNum.includes('part 1') && title.includes('general')) {
-      return <FileText className="w-5 h-5 text-emerald-600" />;
+    if (stdNum.includes('Part 2') || title.includes('particular')) {
+      return {
+        number: 'IS 302 (Part 2)',
+        subtitle: 'Specific Safety',
+        icon: <Settings className="w-4 h-4 text-[#0067C5]" />,
+        isCenter: false,
+      };
     }
-    if (title.includes('safety') || title.includes('appliances')) {
-      return <Shield className="w-5 h-5 text-blue-600" />;
+    if (stdNum.includes('Part 1') || title.includes('general')) {
+      return {
+        number: 'IS 302 (Part 1)',
+        subtitle: 'General Req.',
+        icon: <FileText className="w-4 h-4 text-[#0067C5]" />,
+        isCenter: false,
+      };
     }
-    if (title.includes('control') || stdNum.includes('60730')) {
-      return <Cpu className="w-5 h-5 text-purple-600" />;
+    if (stdNum.includes('3854') || title.includes('switch') || title.includes('test')) {
+      return {
+        number: 'IS 3854',
+        subtitle: 'Test Methods',
+        icon: <FlaskConical className="w-4 h-4 text-[#0067C5]" />,
+        isCenter: false,
+      };
     }
-    if (title.includes('thermocouple') || stdNum.includes('16923')) {
-      return <Compass className="w-5 h-5 text-sky-600" />;
+    if (stdNum.includes('302') && !stdNum.includes('Part')) {
+      return {
+        number: 'IS 302',
+        subtitle: 'Safety',
+        icon: <ShieldCheck className="w-4 h-4 text-[#0067C5]" />,
+        isCenter: false,
+      };
     }
-    return <FileText className="w-5 h-5 text-blue-600" />;
+    if (title.includes('related') || stdNum.includes('Related')) {
+      return {
+        number: 'Related Standards',
+        subtitle: 'View Connections',
+        icon: <Network className="w-4 h-4 text-[#0067C5]" />,
+        isCenter: false,
+      };
+    }
+    return {
+      number: stdNum || 'Standard',
+      subtitle: nodeData.standard_type || 'Normative',
+      icon: <FileText className="w-4 h-4 text-[#0067C5]" />,
+      isCenter: false,
+    };
   };
 
-  const getSubtitle = () => {
-    if (isCentral) return 'Product Standard';
-    const stdNum = nodeData.standard_number || '';
-    if (stdNum.includes('Part 2/Sec 21')) return 'Specific Safety';
-    if (stdNum.includes('Part 1')) return 'General Req.';
-    if (stdNum.includes('302')) return 'Safety Standard';
-    if (stdNum.includes('60730')) return 'Control Standard';
-    if (stdNum.includes('16923')) return 'Measurement Standard';
-    return nodeData.standard_type || 'Standard';
-  };
+  const config = getNodeConfig();
 
-  if (isCentral) {
+  if (config.isCenter) {
     return (
       <div
-        className={`relative rounded-full w-32 h-32 sm:w-36 sm:h-36 bg-white border-2 border-blue-400 shadow-xl shadow-blue-500/15 flex flex-col items-center justify-center p-3 text-center cursor-pointer transition-transform hover:scale-105 ${
-          selected ? 'ring-4 ring-blue-200' : ''
+        className={`relative rounded-full w-28 h-28 sm:w-32 sm:h-32 bg-white border-2 border-blue-200 shadow-xl shadow-blue-500/10 flex flex-col items-center justify-center p-2 text-center cursor-pointer transition-all duration-300 hover:scale-105 ${
+          selected ? 'ring-4 ring-blue-300' : ''
         }`}
       >
         <Handle type="target" position={Position.Top} className="!opacity-0 !w-1 !h-1" />
@@ -53,17 +90,14 @@ export const CircularStandardNode: React.FC<NodeProps> = memo(({ data, selected 
         <Handle type="target" position={Position.Left} className="!opacity-0 !w-1 !h-1" />
         <Handle type="source" position={Position.Right} className="!opacity-0 !w-1 !h-1" />
 
-        <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 mb-1">
-          <FileText className="w-5 h-5" />
+        <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center mb-1">
+          {config.icon}
         </div>
-        <span className="text-sm sm:text-base font-black text-[#062B52] tracking-tight leading-none">
-          IS 2082
+        <span className="text-sm sm:text-base font-black text-[#0B192C] tracking-tight leading-none">
+          {config.number}
         </span>
-        <span className="text-[10px] sm:text-[11px] font-semibold text-blue-600 mt-1 block">
-          Product Standard
-        </span>
-        <span className="text-[9px] text-slate-400 font-medium mt-0.5">
-          {nodeData.year || '2018'}
+        <span className="text-[10px] sm:text-[11px] font-semibold text-[#0067C5] mt-1 block leading-tight">
+          {config.subtitle}
         </span>
       </div>
     );
@@ -71,9 +105,9 @@ export const CircularStandardNode: React.FC<NodeProps> = memo(({ data, selected 
 
   return (
     <div
-      className={`relative rounded-full w-24 h-24 sm:w-28 sm:h-28 bg-white border ${
-        isSuperseded ? 'border-amber-300 shadow-amber-500/10' : 'border-slate-200 shadow-slate-900/5'
-      } shadow-lg hover:shadow-xl hover:border-blue-400 transition-all flex flex-col items-center justify-center p-2 text-center cursor-pointer hover:scale-105 ${
+      className={`relative rounded-full w-22 h-22 sm:w-24 sm:h-24 bg-white border ${
+        isSuperseded ? 'border-amber-300' : 'border-slate-200'
+      } shadow-md hover:shadow-lg hover:border-blue-400 transition-all duration-200 flex flex-col items-center justify-center p-1.5 text-center cursor-pointer hover:scale-105 ${
         selected ? 'ring-2 ring-blue-400' : ''
       }`}
     >
@@ -82,12 +116,16 @@ export const CircularStandardNode: React.FC<NodeProps> = memo(({ data, selected 
       <Handle type="target" position={Position.Left} className="!opacity-0 !w-1 !h-1" />
       <Handle type="source" position={Position.Right} className="!opacity-0 !w-1 !h-1" />
 
-      <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center mb-1">
-        {getNodeIcon()}
+      <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center mb-0.5">
+        {isSuperseded ? (
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+        ) : (
+          config.icon
+        )}
       </div>
 
-      <span className="text-[11px] sm:text-xs font-bold text-[#062B52] leading-tight px-1 line-clamp-1">
-        {nodeData.standard_number?.replace(':2018', '').replace(':2024', '').replace(':1999', '')}
+      <span className="text-[11px] font-bold text-[#0B192C] leading-tight px-1 line-clamp-1">
+        {config.number}
       </span>
 
       <span
@@ -95,7 +133,7 @@ export const CircularStandardNode: React.FC<NodeProps> = memo(({ data, selected 
           isSuperseded ? 'text-amber-600 font-bold' : 'text-slate-500'
         }`}
       >
-        {isSuperseded ? 'Superseded' : getSubtitle()}
+        {isSuperseded ? 'Superseded' : config.subtitle}
       </span>
     </div>
   );

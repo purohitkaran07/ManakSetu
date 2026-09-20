@@ -1,7 +1,7 @@
 import React from 'react';
 import { Standard } from '../../types';
 import { Link } from 'react-router-dom';
-import { FileText, ArrowRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { ArrowRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface Props {
   standard: Standard;
@@ -11,15 +11,17 @@ export const StandardCard: React.FC<Props> = ({ standard }) => {
   const isSuperseded = standard.status.toLowerCase() === 'superseded';
 
   return (
-    <div className={`rounded-2xl border p-5 transition-all duration-200 flex flex-col justify-between ${
-      isSuperseded
-        ? 'bg-amber-50/30 border-amber-200 hover:border-amber-300'
-        : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-md'
-    }`}>
+    <div
+      className={`rounded-2xl border p-5 transition-all duration-200 flex flex-col justify-between ${
+        isSuperseded
+          ? 'bg-amber-50/20 border-amber-200 hover:border-amber-300'
+          : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-md'
+      }`}
+    >
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
-            <span className="font-mono text-sm sm:text-base font-extrabold text-slate-900">
+            <span className="font-mono text-sm sm:text-base font-extrabold text-[#0B192C]">
               {standard.standard_number}
             </span>
             <span
@@ -38,23 +40,25 @@ export const StandardCard: React.FC<Props> = ({ standard }) => {
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 uppercase tracking-wide">
+        <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0067C5] uppercase tracking-wide">
             {standard.standard_type}
           </span>
           <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
             {standard.classification}
           </span>
-          <span className={`text-[10px] px-2 py-0.5 rounded ${
-            standard.certification_status.includes('Mandatory')
-              ? 'bg-amber-50 text-amber-900 border border-amber-200 font-semibold'
-              : 'bg-slate-100 text-slate-600 font-medium'
-          }`}>
-            Certification: {standard.certification_status}
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded ${
+              standard.certification_status.includes('Mandatory')
+                ? 'bg-amber-50 text-amber-900 border border-amber-200 font-semibold'
+                : 'bg-slate-100 text-slate-600 font-medium'
+            }`}
+          >
+            {standard.certification_status}
           </span>
         </div>
 
-        <h3 className="text-sm font-bold text-slate-900 mb-2 leading-snug">
+        <h3 className="text-sm font-bold text-[#0B192C] mb-2 leading-snug">
           {standard.title}
         </h3>
 
@@ -64,14 +68,17 @@ export const StandardCard: React.FC<Props> = ({ standard }) => {
       </div>
 
       <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-        <span className="text-slate-500 line-clamp-1 max-w-[220px]" title={standard.source_reference || 'BIS Reference Knowledge'}>
-          Source: {standard.source_reference ? standard.source_reference.split('/')[0].trim() : 'BIS Reference Knowledge'}
+        <span
+          className="text-slate-500 line-clamp-1 max-w-[200px]"
+          title={standard.source_reference || 'BIS Reference Registry'}
+        >
+          {standard.source_reference ? standard.source_reference.split('/')[0].trim() : 'BIS Reference Registry'}
         </span>
         <Link
           to={`/standards/${standard.id}`}
-          className="inline-flex items-center font-semibold text-blue-600 hover:text-blue-700 group"
+          className="inline-flex items-center font-bold text-[#0067C5] hover:text-[#004C99] group"
         >
-          View Full Specification
+          View Scope
           <ArrowRight className="w-3.5 h-3.5 ml-1 group-hover:translate-x-0.5 transition" />
         </Link>
       </div>

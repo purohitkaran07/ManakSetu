@@ -31,9 +31,8 @@ class SemanticRetrievalUnavailableError(Exception):
 
 class MiniLMInferenceEngine:
     """
-    Memory-safe pure NumPy inference for sentence-transformers/all-MiniLM-L6-v2.
-    Loads official safetensors weights directly without duplicating arrays in memory.
-    Zero PyTorch dependency: stays well below Render Free's 512MB RAM constraint.
+    Direct NumPy inference for sentence-transformers/all-MiniLM-L6-v2.
+    Loads official safetensors weights and HuggingFace tokenizer.
     Produces exact, genuine 384-dimensional L2-normalized sentence embeddings.
     """
 
@@ -49,16 +48,10 @@ class MiniLMInferenceEngine:
             from tokenizers import Tokenizer
             from safetensors.numpy import load_file
 
-            # Fast local cache check first (no network request or rate limit warning)
-            try:
-                tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json", local_files_only=True)
-                weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors", local_files_only=True)
-            except Exception:
-                tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json")
-                weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors")
+            tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json")
+            weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors")
 
             self._tokenizer = Tokenizer.from_file(tok_file)
-            # Store single direct copy of safetensors weights (~90MB RAM total, zero duplicates)
             self._weights = load_file(weights_file)
         except Exception as e:
             raise SemanticRetrievalUnavailableError(
@@ -76,13 +69,12 @@ class MiniLMInferenceEngine:
         return 0.5 * x * (1.0 + erf(x / np.sqrt(2.0)))
 
     def encode(self, texts: List[str]) -> np.ndarray:
-        """Encodes list of texts into shape (N, 384) L2-normalized embeddings using weights directly."""
+        """Encodes list of texts into shape (N, 384) L2-normalized embeddings."""
         if isinstance(texts, str):
             texts = [texts]
 
         embeddings_list = []
         w = self._weights
-        scale = 1.0 / np.sqrt(32.0)
 
         for text in texts:
             encoded = self._tokenizer.encode(text)
@@ -98,19 +90,18 @@ class MiniLMInferenceEngine:
 
             positions = np.arange(seq_len)
 
-            # 1. Embedding layer (accessed directly from single weights dict)
+            # 1. Embedding layer
             w_emb = w["embeddings.word_embeddings.weight"][input_ids]
             p_emb = w["embeddings.position_embeddings.weight"][positions]
             t_emb = w["embeddings.token_type_embeddings.weight"][np.zeros(seq_len, dtype=int)]
             x = w_emb + p_emb + t_emb
             x = self._layer_norm(x, w["embeddings.LayerNorm.weight"], w["embeddings.LayerNorm.bias"])
 
-            pad_mask = (1.0 - attention_mask)[None, None, :] * -10000.0
-
             # 2. 6 Transformer encoder layers
             for i in range(6):
                 pfx = f"encoder.layer.{i}."
 
+                # Multi-head attention (12 heads x 32 dim = 384)
                 W_q = w[pfx + "attention.self.query.weight"].T
                 b_q = w[pfx + "attention.self.query.bias"]
                 W_k = w[pfx + "attention.self.key.weight"].T
@@ -122,21 +113,32 @@ class MiniLMInferenceEngine:
                 K = (x @ W_k + b_k).reshape(seq_len, 12, 32).transpose(1, 0, 2)
                 V = (x @ W_v + b_v).reshape(seq_len, 12, 32).transpose(1, 0, 2)
 
-                scores = (Q @ K.transpose(0, 2, 1)) * scale + pad_mask
+                scores = (Q @ K.transpose(0, 2, 1)) / np.sqrt(32.0)
+                pad_mask = (1.0 - attention_mask)[None, None, :] * -10000.0
+                scores = scores + pad_mask
+
                 exp_scores = np.exp(scores - np.max(scores, axis=-1, keepdims=True))
                 probs = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
 
                 context = (probs @ V).transpose(1, 0, 2).reshape(seq_len, 384)
 
-                attn_out = context @ w[pfx + "attention.output.dense.weight"].T + w[pfx + "attention.output.dense.bias"]
+                W_ao = w[pfx + "attention.output.dense.weight"].T
+                b_ao = w[pfx + "attention.output.dense.bias"]
+                attn_out = context @ W_ao + b_ao
                 x = self._layer_norm(
                     x + attn_out,
                     w[pfx + "attention.output.LayerNorm.weight"],
                     w[pfx + "attention.output.LayerNorm.bias"],
                 )
 
-                inter = self._gelu(x @ w[pfx + "intermediate.dense.weight"].T + w[pfx + "intermediate.dense.bias"])
-                ffn_out = inter @ w[pfx + "output.dense.weight"].T + w[pfx + "output.dense.bias"]
+                # Feed-forward block
+                W_inter = w[pfx + "intermediate.dense.weight"].T
+                b_inter = w[pfx + "intermediate.dense.bias"]
+                inter = self._gelu(x @ W_inter + b_inter)
+
+                W_out = w[pfx + "output.dense.weight"].T
+                b_out = w[pfx + "output.dense.bias"]
+                ffn_out = inter @ W_out + b_out
                 x = self._layer_norm(
                     x + ffn_out,
                     w[pfx + "output.LayerNorm.weight"],
@@ -157,38 +159,32 @@ class MiniLMInferenceEngine:
         return np.array(embeddings_list, dtype=np.float32)
 
 
-# Process-level singleton: lazily initialized on first analyze request, reused thereafter
-_global_model: Optional[MiniLMInferenceEngine] = None
-_global_cached_fingerprint: Optional[str] = None
-_global_cached_embeddings: Optional[np.ndarray] = None
-_global_cached_ids: Optional[List[int]] = None
-_global_query_cache: Dict[str, np.ndarray] = {}
-_MAX_QUERY_CACHE: int = 20  # Strict memory cap to stay well below 512MB
-
-
 class VectorStore:
     def __init__(self, model_name: str = MODEL_NAME, embedding_dim: int = EMBEDDING_DIM):
         self.model_name = model_name
         self.embedding_dim = embedding_dim
+        self._model = None
         self._is_available = True
         self._error_message = None
 
-    def _load_model(self) -> MiniLMInferenceEngine:
-        global _global_model
-        if _global_model is not None:
-            return _global_model
-
-        # Only ONE embedding model implementation: lightweight pure-NumPy MiniLM.
-        # Zero PyTorch/SentenceTransformers import to guarantee staying under 512MB.
+    def _load_model(self):
+        if self._model is not None:
+            return self._model
         try:
-            _global_model = MiniLMInferenceEngine(self.model_name)
-            return _global_model
-        except Exception as e:
-            self._is_available = False
-            self._error_message = str(e)
-            raise SemanticRetrievalUnavailableError(
-                f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
-            )
+            # Primary: Native exact MiniLM inference engine (pure NumPy, no PyTorch C-DLL crashes)
+            self._model = MiniLMInferenceEngine(self.model_name)
+            return self._model
+        except Exception:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._model = SentenceTransformer(self.model_name)
+                return self._model
+            except Exception as e:
+                self._is_available = False
+                self._error_message = str(e)
+                raise SemanticRetrievalUnavailableError(
+                    f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
+                )
 
     @property
     def is_available(self) -> bool:
@@ -250,16 +246,8 @@ class VectorStore:
     def load_cache(self, current_fingerprint: str) -> Optional[Tuple[np.ndarray, List[int]]]:
         """
         Returns (embeddings_matrix, list_of_standard_ids) if cache exists and fingerprint matches.
-        Uses in-memory cache first, falls back to disk.
+        Otherwise returns None.
         """
-        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
-        if (
-            _global_cached_fingerprint == current_fingerprint
-            and _global_cached_embeddings is not None
-            and _global_cached_ids is not None
-        ):
-            return _global_cached_embeddings, _global_cached_ids
-
         if not CACHE_NPY.exists() or not INDEX_JSON.exists():
             return None
 
@@ -278,20 +266,12 @@ class VectorStore:
             if len(ids) != embeddings.shape[0]:
                 return None
 
-            _global_cached_fingerprint = current_fingerprint
-            _global_cached_embeddings = embeddings
-            _global_cached_ids = ids
             return embeddings, ids
         except Exception:
             return None
 
     def save_cache(self, embeddings: np.ndarray, ids: List[int], fingerprint: str):
-        """Saves precomputed embeddings and index with fingerprint in RAM and on disk."""
-        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
-        _global_cached_fingerprint = fingerprint
-        _global_cached_embeddings = embeddings
-        _global_cached_ids = ids
-
+        """Saves precomputed embeddings and index with fingerprint."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         np.save(str(CACHE_NPY), embeddings)
         index_data = {
@@ -327,19 +307,7 @@ class VectorStore:
         return embeddings_matrix, ids
 
     def encode_query(self, query_text: str) -> np.ndarray:
-        """Encodes query string into a normalized 384-d vector with fast in-memory caching."""
-        global _global_query_cache
-        if query_text in _global_query_cache:
-            return _global_query_cache[query_text]
-
+        """Encodes query string into a normalized 384-d vector."""
         model = self._load_model()
-        raw_emb = model.encode([query_text])
-        query_vector = np.array(raw_emb[0], dtype=np.float32)
-
-        # Cache query vector
-        if len(_global_query_cache) >= _MAX_QUERY_CACHE:
-            _global_query_cache.pop(next(iter(_global_query_cache)))
-        _global_query_cache[query_text] = query_vector
-
-        return query_vector
-
+        query_vector = model.encode([query_text])[0]
+        return np.array(query_vector, dtype=np.float32)

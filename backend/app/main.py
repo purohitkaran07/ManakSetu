@@ -9,7 +9,7 @@ from app.api import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure tables exist and seed database (memory-safe startup under 512MB)
+    # Startup: ensure tables exist and seed database
     Base.metadata.create_all(bind=engine)
     seed_database()
     yield

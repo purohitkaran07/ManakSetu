@@ -2,14 +2,11 @@ import React from 'react';
 import { RecommendationItem } from '../../types';
 import { Link } from 'react-router-dom';
 import {
-  FileText,
-  ShieldCheck,
   CheckCircle,
-  ExternalLink,
   Network,
-  Award,
   ChevronRight,
   Info,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface Props {
@@ -24,9 +21,9 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
   const getConfidenceColor = (conf: string) => {
     switch (conf.toLowerCase()) {
       case 'high':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+        return 'bg-emerald-50 text-emerald-800 border-emerald-300';
       case 'medium':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
+        return 'bg-blue-50 text-blue-800 border-blue-300';
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
     }
@@ -37,19 +34,19 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
       {/* Top Banner & Rank */}
       <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-100">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 font-extrabold text-sm flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-[#0067C5] font-black text-xs sm:text-sm flex items-center justify-center">
             0{rank}
           </div>
           <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-mono text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-base sm:text-lg font-extrabold text-[#0B192C] tracking-tight">
                 {std.standard_number}
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 {std.status}
               </span>
               <span className="hidden sm:inline text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
-                Recommendation Supported by Evidence
+                Verified Indian Standard
               </span>
             </div>
             <span className="text-xs text-slate-500 font-medium">
@@ -62,8 +59,8 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
         <div className="flex items-center space-x-3 text-right">
           <div>
             <div className="flex items-center justify-end space-x-1.5">
-              <span className="text-xs font-bold text-slate-800">
-                {relevancePercent}%
+              <span className="text-xs font-bold text-[#0B192C]">
+                {relevancePercent}% Match
               </span>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getConfidenceColor(item.confidence)}`}>
                 {item.confidence} Confidence
@@ -71,7 +68,7 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
             </div>
             <div className="w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1 ml-auto">
               <div
-                className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full"
+                className="h-full bg-[#0067C5] rounded-full"
                 style={{ width: `${Math.min(relevancePercent, 100)}%` }}
               ></div>
             </div>
@@ -79,22 +76,22 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
         </div>
       </div>
 
-      {/* Title & Type */}
+      {/* Title & Metadata Badges */}
       <div className="my-4">
-        <div className="flex items-center space-x-2 mb-1.5">
-          <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className="text-[10px] font-bold text-[#0067C5] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded uppercase tracking-wider">
             {std.standard_type}
           </span>
-          <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+          <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
             Certification: <strong className="font-semibold text-slate-800">{item.certification_status}</strong>
           </span>
           {std.source_reference && (
-            <span className="hidden sm:inline text-[10px] text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md" title={std.source_reference}>
+            <span className="hidden sm:inline text-[10px] text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded" title={std.source_reference}>
               Ref: {std.source_reference.split('/')[0].trim()}
             </span>
           )}
         </div>
-        <h4 className="text-base font-bold text-slate-900 leading-snug">
+        <h4 className="text-base font-bold text-[#0B192C] leading-snug">
           {std.title}
         </h4>
         <p className="text-xs text-slate-600 mt-2 line-clamp-3 leading-relaxed">
@@ -103,10 +100,10 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
       </div>
 
       {/* Recommendation Reasoning & Grounded Evidence */}
-      <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50/70 -mx-5 -mb-5 sm:-mx-6 sm:-mb-6 p-5 sm:p-6 space-y-3">
+      <div className="mt-4 pt-4 border-t border-slate-100 bg-[#F8FAFC] -mx-5 -mb-5 sm:-mx-6 sm:-mb-6 p-5 sm:p-6 space-y-3">
         <div>
-          <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center mb-1">
-            <Info className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+          <h5 className="text-[11px] font-bold text-[#0B192C] uppercase tracking-wider flex items-center mb-1">
+            <Info className="w-3.5 h-3.5 mr-1.5 text-[#0067C5]" />
             Applicability Assessment
           </h5>
           <p className="text-xs text-slate-700 leading-relaxed font-medium">
@@ -130,20 +127,20 @@ export const RecommendationCard: React.FC<Props> = ({ item, rank }) => {
         </div>
 
         {/* Footer Actions */}
-        <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
           <Link
             to={`/standards/${std.id}`}
-            className="inline-flex items-center font-semibold text-blue-700 hover:text-blue-800 hover:underline"
+            className="inline-flex items-center font-bold text-[#0067C5] hover:text-[#004C99] hover:underline"
           >
             View Standard Scope & Details
             <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
           </Link>
 
           <Link
-            to={`/graph`}
-            className="inline-flex items-center font-semibold text-slate-700 hover:text-blue-700 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm hover:border-blue-300 transition"
+            to="/graph"
+            className="inline-flex items-center font-semibold text-slate-700 hover:text-[#0067C5] bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-2xs hover:border-blue-300 transition"
           >
-            <Network className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+            <Network className="w-3.5 h-3.5 mr-1.5 text-[#0067C5]" />
             Trace in Knowledge Graph
           </Link>
         </div>

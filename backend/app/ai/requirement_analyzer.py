@@ -32,15 +32,26 @@ class DeterministicRequirementAnalyzer(BaseRequirementAnalyzer):
 
     # Quantity patterns (e.g., "500 units", "procure 500", "500 nos", "quantity: 100")
     QUANTITY_PATTERNS = [
-        re.compile(r"\b(?:procure|supply|order|purchase|need|buy|quantity[:\s]*)\s+(\d+)\b", re.IGNORECASE),
-        re.compile(r"\b(\d+)\s*(?:nos|units|pieces|pcs|heaters|items)\b", re.IGNORECASE),
+        re.compile(r'\b(?:procure|supply|order|purchase|need|buy|quantity)[:\s]+(\d+)\b', re.IGNORECASE),
+        re.compile(r'\b(\d+)\s*(?:nos|units|pieces|pcs|heaters|items)\b', re.IGNORECASE),
+        re.compile(r'^\s*(\d+)\s+(?=(?:wall[-\s]?mounted|floor[-\s]?standing|ceiling[-\s]?mounted|under[-\s]?sink|horizontal|vertical)\b)', re.IGNORECASE),
+        re.compile(r'\b(\d+)\s+(?:led\s+street\s+lights?|street\s+lights?|ceiling\s+fans?|water\s+pumps?|submersible\s+pumps?|electric\s+motors?|power\s+cables?|electric\s+cables?|led\s+luminaires?|led\s+lamps?)\b', re.IGNORECASE),
     ]
 
-    # Capacity / Specification patterns (e.g., "25 litre", "25L", "15 litres", "2000 W", "2 kW")
-    CAPACITY_PATTERNS = [
-        re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:litres?|liters?|ltrs?|l)\b", re.IGNORECASE),
-        re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:kw|watts?|w)\b", re.IGNORECASE),
-        re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:v|volts?)\b", re.IGNORECASE),
+    # Dynamic, input-dependent specification patterns (never hard-coded, extracts verbatim values)
+    SPECIFICATION_PATTERNS = [
+        # Capacity / Volume
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:litres?|liters?|ltrs?|l|kl|ml)\b", re.IGNORECASE), "capacity"),
+        # Electrical / Power Rating
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:watts?|w|kw|mw|hp)\b", re.IGNORECASE), "rated_power"),
+        # Voltage
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:volts?|v|kv)\b", re.IGNORECASE), "rated_voltage"),
+        # Sweep / Dimension / Size (e.g., "1200 mm sweep", "1200mm", "50 cm", "2 m", "10 inches")
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:mm\s+sweep|mm|cm|meters?|metres?|m|inches?|inch)\b", re.IGNORECASE), "sweep_or_dimension"),
+        # Pressure (e.g., "5 bar", "100 psi", "100 kpa")
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:bar|psi|kpa)\b", re.IGNORECASE), "rated_pressure"),
+        # Rotational Speed (e.g., "1400 rpm")
+        (re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:rpm)\b", re.IGNORECASE), "speed"),
     ]
 
     # Installation patterns
@@ -121,6 +132,20 @@ class DeterministicRequirementAnalyzer(BaseRequirementAnalyzer):
             "Transformer",
             "Power Distribution & Electrical Equipment",
         ),
+        # Common procurement products
+        (re.compile(r'\bled\s+street\s+lights?\b', re.IGNORECASE), "LED Street Light", "Lighting Equipment"),
+        (re.compile(r'\bstreet\s+lights?\b', re.IGNORECASE), "Street Light", "Lighting Equipment"),
+        (re.compile(r'\bled\s+luminaires?\b', re.IGNORECASE), "LED Luminaire", "Lighting Equipment"),
+        (re.compile(r'\bceiling\s+fans?\b', re.IGNORECASE), "Ceiling Fan", "Electrical Appliances"),
+        (re.compile(r'\belectric\s+fans?\b', re.IGNORECASE), "Electric Fan", "Electrical Appliances"),
+        (re.compile(r'\bwater\s+pumps?\b', re.IGNORECASE), "Water Pump", "Pumps"),
+        (re.compile(r'\bsubmersible\s+pumps?\b', re.IGNORECASE), "Submersible Pump", "Pumps"),
+        (re.compile(r'\belectric\s+motors?\b', re.IGNORECASE), "Electric Motor", "Electrical Equipment"),
+        (re.compile(r'\bpower\s+cables?\b', re.IGNORECASE), "Power Cable", "Electrical Equipment"),
+        (re.compile(r'\belectric\s+cables?\b', re.IGNORECASE), "Electrical Cable", "Electrical Equipment"),
+        (re.compile(r'\bswitch(?:es)?\b', re.IGNORECASE), "Electrical Switch", "Electrical Accessories"),
+        (re.compile(r'\bsockets?\b', re.IGNORECASE), "Electrical Socket", "Electrical Accessories"),
+        (re.compile(r'\bled\s+lamps?\b', re.IGNORECASE), "LED Lamp", "Lighting Equipment"),
     ]
 
     def extract_explicit_standards(self, text: str) -> List[str]:
@@ -166,17 +191,16 @@ class DeterministicRequirementAnalyzer(BaseRequirementAnalyzer):
                 except ValueError:
                     pass
 
-        # 4. Specifications (Capacity, Rating)
-        for cap_pat in self.CAPACITY_PATTERNS:
-            match = cap_pat.search(text_clean)
+        # 4. Specifications (Capacity, Rating, Sweep/Dimension, Pressure, Speed)
+        for spec_pat, spec_key in self.SPECIFICATION_PATTERNS:
+            match = spec_pat.search(text_clean)
             if match:
-                matched_str = match.group(0).lower()
-                if "l" in matched_str or "litre" in matched_str or "liter" in matched_str:
-                    specifications["capacity"] = matched_str
-                elif "w" in matched_str or "kw" in matched_str:
-                    specifications["rated_power"] = matched_str
-                elif "v" in matched_str or "volt" in matched_str:
-                    specifications["rated_voltage"] = matched_str
+                matched_val = match.group(0).strip()
+                if spec_key == "sweep_or_dimension":
+                    actual_key = "sweep" if "sweep" in matched_val.lower() or "sweep" in text_clean.lower() else "dimension"
+                    specifications[actual_key] = matched_val
+                else:
+                    specifications[spec_key] = matched_val
 
         # 5. Installation
         installation = None
@@ -235,3 +259,6 @@ def get_requirement_analyzer(provider: str = "none") -> BaseRequirementAnalyzer:
     if provider and provider.lower() != "none":
         return LLMRequirementAnalyzer(provider=provider)
     return DeterministicRequirementAnalyzer()
+
+
+
