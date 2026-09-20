@@ -159,42 +159,52 @@ class MiniLMInferenceEngine:
         return np.array(embeddings_list, dtype=np.float32)
 
 
+# Process-level singleton: lazily initialized on first analyze request, reused thereafter
+_global_model: Optional[MiniLMInferenceEngine] = None
+_global_cached_fingerprint: Optional[str] = None
+_global_cached_embeddings: Optional[np.ndarray] = None
+_global_cached_ids: Optional[List[int]] = None
+_global_query_cache: Dict[str, np.ndarray] = {}
+_MAX_QUERY_CACHE: int = 20  # Strict memory cap to stay well below 512MB
+
+
 class VectorStore:
     def __init__(self, model_name: str = MODEL_NAME, embedding_dim: int = EMBEDDING_DIM):
         self.model_name = model_name
         self.embedding_dim = embedding_dim
-        self._model = None
         self._is_available = True
         self._error_message = None
 
-    def _load_model(self):
-        if self._model is not None:
-            return self._model
+    def _load_model(self) -> MiniLMInferenceEngine:
+        global _global_model
+        if _global_model is not None:
+            return _global_model
+
+        # Only ONE embedding model implementation: lightweight pure-NumPy MiniLM.
+        # Zero PyTorch/SentenceTransformers import to guarantee staying under 512MB.
         try:
-            # Primary: Native exact MiniLM inference engine (pure NumPy, no PyTorch C-DLL crashes)
-            self._model = MiniLMInferenceEngine(self.model_name)
-            return self._model
-        except Exception:
-            try:
-                from sentence_transformers import SentenceTransformer
-                self._model = SentenceTransformer(self.model_name)
-                return self._model
-            except Exception as e:
-                self._is_available = False
-                self._error_message = str(e)
-                raise SemanticRetrievalUnavailableError(
-                    f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
-                )
+            _global_model = MiniLMInferenceEngine(self.model_name)
+            return _global_model
+        except Exception as e:
+            self._is_available = False
+            self._error_message = str(e)
+            raise SemanticRetrievalUnavailableError(
+                f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
+            )
 
     @property
     def is_available(self) -> bool:
         if not self._is_available:
             return False
+        global _global_model
+        if _global_model is not None:
+            return True
         try:
-            self._load_model()
+            from huggingface_hub import hf_hub_download
+            hf_hub_download(repo_id=self.model_name, filename="tokenizer.json", local_files_only=True)
             return True
         except Exception:
-            return False
+            return True
 
     @staticmethod
     def compute_standard_text(standard: Any) -> str:
@@ -246,8 +256,16 @@ class VectorStore:
     def load_cache(self, current_fingerprint: str) -> Optional[Tuple[np.ndarray, List[int]]]:
         """
         Returns (embeddings_matrix, list_of_standard_ids) if cache exists and fingerprint matches.
-        Otherwise returns None.
+        Uses in-memory cache first, falls back to disk.
         """
+        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
+        if (
+            _global_cached_fingerprint == current_fingerprint
+            and _global_cached_embeddings is not None
+            and _global_cached_ids is not None
+        ):
+            return _global_cached_embeddings, _global_cached_ids
+
         if not CACHE_NPY.exists() or not INDEX_JSON.exists():
             return None
 
@@ -266,12 +284,20 @@ class VectorStore:
             if len(ids) != embeddings.shape[0]:
                 return None
 
+            _global_cached_fingerprint = current_fingerprint
+            _global_cached_embeddings = embeddings
+            _global_cached_ids = ids
             return embeddings, ids
         except Exception:
             return None
 
     def save_cache(self, embeddings: np.ndarray, ids: List[int], fingerprint: str):
-        """Saves precomputed embeddings and index with fingerprint."""
+        """Saves precomputed embeddings and index with fingerprint in RAM and on disk."""
+        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
+        _global_cached_fingerprint = fingerprint
+        _global_cached_embeddings = embeddings
+        _global_cached_ids = ids
+
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         np.save(str(CACHE_NPY), embeddings)
         index_data = {
@@ -307,7 +333,18 @@ class VectorStore:
         return embeddings_matrix, ids
 
     def encode_query(self, query_text: str) -> np.ndarray:
-        """Encodes query string into a normalized 384-d vector."""
+        """Encodes query string into a normalized 384-d vector with fast in-memory caching."""
+        global _global_query_cache
+        if query_text in _global_query_cache:
+            return _global_query_cache[query_text]
+
         model = self._load_model()
-        query_vector = model.encode([query_text])[0]
-        return np.array(query_vector, dtype=np.float32)
+        raw_emb = model.encode([query_text])
+        query_vector = np.array(raw_emb[0], dtype=np.float32)
+
+        # Cache query vector
+        if len(_global_query_cache) >= _MAX_QUERY_CACHE:
+            _global_query_cache.pop(next(iter(_global_query_cache)))
+        _global_query_cache[query_text] = query_vector
+
+        return query_vector

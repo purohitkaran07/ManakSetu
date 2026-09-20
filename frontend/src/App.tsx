@@ -19,6 +19,7 @@ export const App: React.FC = () => {
           <Route path="standards" element={<StandardsPage />} />
           <Route path="standards/:id" element={<StandardDetailPage />} />
           <Route path="graph" element={<KnowledgeGraphPage />} />
+          <Route path="knowledge-graph" element={<KnowledgeGraphPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -27,7 +27,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS for Vite development and local production previews
+# Configure CORS for Vite development and Vercel production domains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,8 +35,11 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "*",
+        "https://manaksetu.vercel.app",
+        "https://manak-setu.vercel.app",
+        "https://manaksetu-frontend.vercel.app",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

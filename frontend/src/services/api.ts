@@ -9,11 +9,45 @@ import {
   HealthResponse,
 } from '../types';
 
-const apiClient = axios.create({
-  baseURL: '/api',
+/**
+ * Production-ready API Base URL resolution:
+ * 1. If VITE_API_URL is configured (e.g. in Vercel environment variables), normalize and use it.
+ * 2. In production mode (Vercel deployment), default directly to the live Render backend:
+ *    https://manaksetu-api.onrender.com/api
+ * 3. In local development, fall back to '/api', which is proxied by Vite to http://127.0.0.1:8000.
+ */
+const getBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl) {
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
+  }
+  if (import.meta.env.PROD) {
+    return 'https://manaksetu-api.onrender.com/api';
+  }
+  return '/api';
+};
+
+export const API_BASE_URL = getBaseUrl();
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Guard against duplicate /api in path when baseURL already ends with /api
+apiClient.interceptors.request.use((config) => {
+  if (config.url) {
+    if (config.baseURL?.endsWith('/api')) {
+      if (config.url === '/api') {
+        config.url = '';
+      } else if (config.url.startsWith('/api/')) {
+        config.url = config.url.substring(4);
+      }
+    }
+  }
+  return config;
 });
 
 export const api = {
