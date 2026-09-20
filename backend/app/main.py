@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
 from app.seed.seed_standards import seed_database
 from app.api import api_router
+from app.services.semantic_engine import warmup_semantic_engine
 
 
 @asynccontextmanager
@@ -12,6 +13,8 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables exist and seed database
     Base.metadata.create_all(bind=engine)
     seed_database()
+    # Pre-warm singleton embedding model and vector cache for sub-second responses
+    warmup_semantic_engine()
     yield
     # Shutdown logic if needed
 

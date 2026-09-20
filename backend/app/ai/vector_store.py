@@ -31,7 +31,7 @@ class SemanticRetrievalUnavailableError(Exception):
 
 class MiniLMInferenceEngine:
     """
-    Direct NumPy inference for sentence-transformers/all-MiniLM-L6-v2.
+    Direct vectorized NumPy inference for sentence-transformers/all-MiniLM-L6-v2.
     Loads official safetensors weights and HuggingFace tokenizer.
     Produces exact, genuine 384-dimensional L2-normalized sentence embeddings.
     """
@@ -39,7 +39,12 @@ class MiniLMInferenceEngine:
     def __init__(self, repo_id: str = MODEL_NAME):
         self.repo_id = repo_id
         self._tokenizer = None
-        self._weights = None
+        self._w_emb = None
+        self._p_emb = None
+        self._t_emb = None
+        self._emb_ln_w = None
+        self._emb_ln_b = None
+        self._layers = []
         self._load()
 
     def _load(self):
@@ -48,11 +53,45 @@ class MiniLMInferenceEngine:
             from tokenizers import Tokenizer
             from safetensors.numpy import load_file
 
-            tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json")
-            weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors")
+            # Fast local cache check first (no network request or rate limit warning)
+            try:
+                tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json", local_files_only=True)
+                weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors", local_files_only=True)
+            except Exception:
+                tok_file = hf_hub_download(repo_id=self.repo_id, filename="tokenizer.json")
+                weights_file = hf_hub_download(repo_id=self.repo_id, filename="model.safetensors")
 
             self._tokenizer = Tokenizer.from_file(tok_file)
-            self._weights = load_file(weights_file)
+            raw_w = load_file(weights_file)
+
+            # Pre-extract and pre-transpose layer weights for fast vectorized inference
+            self._w_emb = raw_w["embeddings.word_embeddings.weight"]
+            self._p_emb = raw_w["embeddings.position_embeddings.weight"]
+            self._t_emb = raw_w["embeddings.token_type_embeddings.weight"][0]
+            self._emb_ln_w = raw_w["embeddings.LayerNorm.weight"]
+            self._emb_ln_b = raw_w["embeddings.LayerNorm.bias"]
+
+            self._layers = []
+            for i in range(6):
+                pfx = f"encoder.layer.{i}."
+                self._layers.append({
+                    "W_q": raw_w[pfx + "attention.self.query.weight"].T,
+                    "b_q": raw_w[pfx + "attention.self.query.bias"],
+                    "W_k": raw_w[pfx + "attention.self.key.weight"].T,
+                    "b_k": raw_w[pfx + "attention.self.key.bias"],
+                    "W_v": raw_w[pfx + "attention.self.value.weight"].T,
+                    "b_v": raw_w[pfx + "attention.self.value.bias"],
+                    "W_ao": raw_w[pfx + "attention.output.dense.weight"].T,
+                    "b_ao": raw_w[pfx + "attention.output.dense.bias"],
+                    "attn_ln_w": raw_w[pfx + "attention.output.LayerNorm.weight"],
+                    "attn_ln_b": raw_w[pfx + "attention.output.LayerNorm.bias"],
+                    "W_inter": raw_w[pfx + "intermediate.dense.weight"].T,
+                    "b_inter": raw_w[pfx + "intermediate.dense.bias"],
+                    "W_out": raw_w[pfx + "output.dense.weight"].T,
+                    "b_out": raw_w[pfx + "output.dense.bias"],
+                    "out_ln_w": raw_w[pfx + "output.LayerNorm.weight"],
+                    "out_ln_b": raw_w[pfx + "output.LayerNorm.bias"],
+                })
         except Exception as e:
             raise SemanticRetrievalUnavailableError(
                 f"Failed to load sentence-transformers weights ({self.repo_id}): {e}"
@@ -74,7 +113,7 @@ class MiniLMInferenceEngine:
             texts = [texts]
 
         embeddings_list = []
-        w = self._weights
+        scale = 1.0 / np.sqrt(32.0)
 
         for text in texts:
             encoded = self._tokenizer.encode(text)
@@ -91,59 +130,31 @@ class MiniLMInferenceEngine:
             positions = np.arange(seq_len)
 
             # 1. Embedding layer
-            w_emb = w["embeddings.word_embeddings.weight"][input_ids]
-            p_emb = w["embeddings.position_embeddings.weight"][positions]
-            t_emb = w["embeddings.token_type_embeddings.weight"][np.zeros(seq_len, dtype=int)]
-            x = w_emb + p_emb + t_emb
-            x = self._layer_norm(x, w["embeddings.LayerNorm.weight"], w["embeddings.LayerNorm.bias"])
+            x = self._w_emb[input_ids] + self._p_emb[positions] + self._t_emb
+            x = self._layer_norm(x, self._emb_ln_w, self._emb_ln_b)
+
+            pad_mask = (1.0 - attention_mask)[None, None, :] * -10000.0
 
             # 2. 6 Transformer encoder layers
-            for i in range(6):
-                pfx = f"encoder.layer.{i}."
-
+            for l in self._layers:
                 # Multi-head attention (12 heads x 32 dim = 384)
-                W_q = w[pfx + "attention.self.query.weight"].T
-                b_q = w[pfx + "attention.self.query.bias"]
-                W_k = w[pfx + "attention.self.key.weight"].T
-                b_k = w[pfx + "attention.self.key.bias"]
-                W_v = w[pfx + "attention.self.value.weight"].T
-                b_v = w[pfx + "attention.self.value.bias"]
+                Q = (x @ l["W_q"] + l["b_q"]).reshape(seq_len, 12, 32).transpose(1, 0, 2)
+                K = (x @ l["W_k"] + l["b_k"]).reshape(seq_len, 12, 32).transpose(1, 0, 2)
+                V = (x @ l["W_v"] + l["b_v"]).reshape(seq_len, 12, 32).transpose(1, 0, 2)
 
-                Q = (x @ W_q + b_q).reshape(seq_len, 12, 32).transpose(1, 0, 2)
-                K = (x @ W_k + b_k).reshape(seq_len, 12, 32).transpose(1, 0, 2)
-                V = (x @ W_v + b_v).reshape(seq_len, 12, 32).transpose(1, 0, 2)
-
-                scores = (Q @ K.transpose(0, 2, 1)) / np.sqrt(32.0)
-                pad_mask = (1.0 - attention_mask)[None, None, :] * -10000.0
-                scores = scores + pad_mask
-
+                scores = (Q @ K.transpose(0, 2, 1)) * scale + pad_mask
                 exp_scores = np.exp(scores - np.max(scores, axis=-1, keepdims=True))
                 probs = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
 
                 context = (probs @ V).transpose(1, 0, 2).reshape(seq_len, 384)
 
-                W_ao = w[pfx + "attention.output.dense.weight"].T
-                b_ao = w[pfx + "attention.output.dense.bias"]
-                attn_out = context @ W_ao + b_ao
-                x = self._layer_norm(
-                    x + attn_out,
-                    w[pfx + "attention.output.LayerNorm.weight"],
-                    w[pfx + "attention.output.LayerNorm.bias"],
-                )
+                attn_out = context @ l["W_ao"] + l["b_ao"]
+                x = self._layer_norm(x + attn_out, l["attn_ln_w"], l["attn_ln_b"])
 
                 # Feed-forward block
-                W_inter = w[pfx + "intermediate.dense.weight"].T
-                b_inter = w[pfx + "intermediate.dense.bias"]
-                inter = self._gelu(x @ W_inter + b_inter)
-
-                W_out = w[pfx + "output.dense.weight"].T
-                b_out = w[pfx + "output.dense.bias"]
-                ffn_out = inter @ W_out + b_out
-                x = self._layer_norm(
-                    x + ffn_out,
-                    w[pfx + "output.LayerNorm.weight"],
-                    w[pfx + "output.LayerNorm.bias"],
-                )
+                inter = self._gelu(x @ l["W_inter"] + l["b_inter"])
+                ffn_out = inter @ l["W_out"] + l["b_out"]
+                x = self._layer_norm(x + ffn_out, l["out_ln_w"], l["out_ln_b"])
 
             # 3. Mean pooling
             mask_exp = attention_mask[:, None]
@@ -159,32 +170,45 @@ class MiniLMInferenceEngine:
         return np.array(embeddings_list, dtype=np.float32)
 
 
+# Process-level singletons for warm fast reuse across requests
+_global_model = None
+_global_cached_fingerprint: Optional[str] = None
+_global_cached_embeddings: Optional[np.ndarray] = None
+_global_cached_ids: Optional[List[int]] = None
+_global_query_cache: Dict[str, np.ndarray] = {}
+_MAX_QUERY_CACHE: int = 256
+
+
 class VectorStore:
     def __init__(self, model_name: str = MODEL_NAME, embedding_dim: int = EMBEDDING_DIM):
         self.model_name = model_name
         self.embedding_dim = embedding_dim
-        self._model = None
         self._is_available = True
         self._error_message = None
 
     def _load_model(self):
-        if self._model is not None:
-            return self._model
+        global _global_model
+        if _global_model is not None:
+            return _global_model
+
+        # 1. Try SentenceTransformer (ideal for Linux/Render with native C++/PyTorch)
         try:
-            # Primary: Native exact MiniLM inference engine (pure NumPy, no PyTorch C-DLL crashes)
-            self._model = MiniLMInferenceEngine(self.model_name)
-            return self._model
+            from sentence_transformers import SentenceTransformer
+            _global_model = SentenceTransformer(self.model_name)
+            return _global_model
         except Exception:
-            try:
-                from sentence_transformers import SentenceTransformer
-                self._model = SentenceTransformer(self.model_name)
-                return self._model
-            except Exception as e:
-                self._is_available = False
-                self._error_message = str(e)
-                raise SemanticRetrievalUnavailableError(
-                    f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
-                )
+            pass
+
+        # 2. Native MiniLM inference engine (portable pure NumPy, robust on Windows/Python 3.14)
+        try:
+            _global_model = MiniLMInferenceEngine(self.model_name)
+            return _global_model
+        except Exception as e:
+            self._is_available = False
+            self._error_message = str(e)
+            raise SemanticRetrievalUnavailableError(
+                f"Semantic retrieval model '{self.model_name}' could not be initialized: {e}"
+            )
 
     @property
     def is_available(self) -> bool:
@@ -246,8 +270,16 @@ class VectorStore:
     def load_cache(self, current_fingerprint: str) -> Optional[Tuple[np.ndarray, List[int]]]:
         """
         Returns (embeddings_matrix, list_of_standard_ids) if cache exists and fingerprint matches.
-        Otherwise returns None.
+        Uses in-memory cache first, falls back to disk.
         """
+        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
+        if (
+            _global_cached_fingerprint == current_fingerprint
+            and _global_cached_embeddings is not None
+            and _global_cached_ids is not None
+        ):
+            return _global_cached_embeddings, _global_cached_ids
+
         if not CACHE_NPY.exists() or not INDEX_JSON.exists():
             return None
 
@@ -266,12 +298,20 @@ class VectorStore:
             if len(ids) != embeddings.shape[0]:
                 return None
 
+            _global_cached_fingerprint = current_fingerprint
+            _global_cached_embeddings = embeddings
+            _global_cached_ids = ids
             return embeddings, ids
         except Exception:
             return None
 
     def save_cache(self, embeddings: np.ndarray, ids: List[int], fingerprint: str):
-        """Saves precomputed embeddings and index with fingerprint."""
+        """Saves precomputed embeddings and index with fingerprint in RAM and on disk."""
+        global _global_cached_fingerprint, _global_cached_embeddings, _global_cached_ids
+        _global_cached_fingerprint = fingerprint
+        _global_cached_embeddings = embeddings
+        _global_cached_ids = ids
+
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         np.save(str(CACHE_NPY), embeddings)
         index_data = {
@@ -307,7 +347,19 @@ class VectorStore:
         return embeddings_matrix, ids
 
     def encode_query(self, query_text: str) -> np.ndarray:
-        """Encodes query string into a normalized 384-d vector."""
+        """Encodes query string into a normalized 384-d vector with fast in-memory caching."""
+        global _global_query_cache
+        if query_text in _global_query_cache:
+            return _global_query_cache[query_text]
+
         model = self._load_model()
-        query_vector = model.encode([query_text])[0]
-        return np.array(query_vector, dtype=np.float32)
+        raw_emb = model.encode([query_text])
+        query_vector = np.array(raw_emb[0], dtype=np.float32)
+
+        # Cache query vector
+        if len(_global_query_cache) >= _MAX_QUERY_CACHE:
+            _global_query_cache.pop(next(iter(_global_query_cache)))
+        _global_query_cache[query_text] = query_vector
+
+        return query_vector
+
