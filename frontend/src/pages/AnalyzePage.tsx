@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { AnalysisResponse } from '../types';
@@ -6,6 +6,7 @@ import { RequirementSummary } from '../components/analyze/RequirementSummary';
 import { VersionAlert } from '../components/analyze/VersionAlert';
 import { RecommendationCard } from '../components/analyze/RecommendationCard';
 import { CandidateCard } from '../components/analyze/CandidateCard';
+import { generateAnalysisPDF } from '../utils/pdfGenerator';
 import {
   Sparkles,
   Search,
@@ -18,10 +19,16 @@ import {
   HelpCircle,
   ShieldCheck,
   ChevronRight,
+  Upload,
+  Download,
+  FileCheck,
+  X,
 } from 'lucide-react';
 
 export const AnalyzePage: React.FC = () => {
   const location = useLocation();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [requirementText, setRequirementText] = useState(
     location.state?.requirement || ''
   );
@@ -33,6 +40,13 @@ export const AnalyzePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // PDF Upload & Export States
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfSuccessInfo, setPdfSuccessInfo] = useState<{ filename: string; pages: number } | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
 
   const testPrompts = [
     {
@@ -87,6 +101,73 @@ export const AnalyzePage: React.FC = () => {
     }
   };
 
+  const handlePdfUpload = async (file: File) => {
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setPdfError('Invalid file type. Please upload a PDF document (.pdf).');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfError('File size exceeds the 10 MB limit. Please upload a smaller document.');
+      return;
+    }
+
+    setPdfUploading(true);
+    setPdfError(null);
+
+    try {
+      const data = await api.extractPdf(file);
+      setRequirementText(data.text);
+      setPdfSuccessInfo({
+        filename: data.filename || file.name,
+        pages: data.pages_count || 1,
+      });
+      setError(null);
+    } catch (err: any) {
+      console.error('PDF extraction error:', err);
+      const detail =
+        err.response?.data?.detail ||
+        err.message ||
+        'Failed to extract text from PDF. Please ensure the document is not password-protected and contains selectable text.';
+      setPdfError(detail);
+      setPdfSuccessInfo(null);
+    } finally {
+      setPdfUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handlePdfUpload(file);
+    }
+  };
+
+  const handleRemovePdf = () => {
+    setPdfSuccessInfo(null);
+    setPdfError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!result) return;
+    try {
+      setDownloadingPdf(true);
+      generateAnalysisPDF(result);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   useEffect(() => {
     if (location.state?.requirement) {
       handleAnalyze(location.state.requirement);
@@ -128,22 +209,93 @@ export const AnalyzePage: React.FC = () => {
             className="space-y-4"
           >
             <div>
-              <label htmlFor="req-text" className="block text-xs font-bold text-[#0B192C] uppercase tracking-wider mb-2">
-                Procurement Requirement Statement
-              </label>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                <label htmlFor="req-text" className="block text-xs font-bold text-[#0B192C] uppercase tracking-wider">
+                  Procurement Requirement Statement
+                </label>
+
+                {/* PDF Upload Option */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="file"
+                    id="pdf-upload-input"
+                    ref={fileInputRef}
+                    accept=".pdf"
+                    onChange={handleFileInputChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={pdfUploading || loading}
+                    className="inline-flex items-center px-3 py-1.5 rounded-lg border border-slate-300 hover:border-[#0067C5] bg-slate-50 hover:bg-blue-50 text-xs font-semibold text-slate-700 hover:text-[#0067C5] transition cursor-pointer disabled:opacity-50"
+                  >
+                    {pdfUploading ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-[#0067C5] border-t-transparent rounded-full animate-spin mr-1.5"></div>
+                        Extracting PDF Text...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5 mr-1.5 text-[#0067C5]" />
+                        Upload PDF Document
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF Extraction Status Banners */}
+              {pdfSuccessInfo && (
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2 mb-2 text-xs text-[#0067C5]">
+                  <div className="flex items-center space-x-2 truncate">
+                    <FileCheck className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+                    <span className="font-semibold truncate">Loaded from: {pdfSuccessInfo.filename}</span>
+                    <span className="text-slate-500 font-normal">
+                      ({pdfSuccessInfo.pages} {pdfSuccessInfo.pages === 1 ? 'page' : 'pages'})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemovePdf}
+                    className="text-slate-400 hover:text-slate-700 transition ml-2 p-1"
+                    title="Clear uploaded document indicator"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {pdfError && (
+                <div className="flex items-start justify-between bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 mb-2 text-xs text-amber-800">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-600 mt-0.5" />
+                    <span className="leading-relaxed">{pdfError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPdfError(null)}
+                    className="text-amber-500 hover:text-amber-800 transition ml-2 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               <textarea
                 id="req-text"
                 rows={4}
                 value={requirementText}
                 onChange={(e) => setRequirementText(e.target.value)}
-                placeholder="Enter procurement clause or technical specification (e.g., We need to procure 500 wall-mounted 25 litre electric storage water heaters for government hostels)..."
+                placeholder="Enter procurement clause or technical specification (e.g., We need to procure 500 wall-mounted 25 litre electric storage water heaters for government hostels), or click 'Upload PDF Document' above..."
                 className="w-full rounded-xl border border-slate-300 p-3.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:border-[#0067C5] focus:ring-2 focus:ring-blue-100 outline-none transition resize-none leading-relaxed"
               />
               <div className="flex justify-between items-center text-[11px] text-slate-400 mt-1">
-                <span>Supports natural language, technical parameters, capacity ratings, or explicit standard numbers</span>
+                <span>Supports natural language, technical parameters, capacity ratings, explicit standards, or uploaded PDF tenders</span>
                 <span>{requirementText.length} characters</span>
               </div>
             </div>
+
 
             {/* Test Scenarios */}
             <div>
@@ -257,7 +409,7 @@ export const AnalyzePage: React.FC = () => {
         {result && (
           <div className="space-y-6 sm:space-y-8 animate-fadeIn">
             {/* Analysis Results Main Banner */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b-2 border-slate-200 gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b-2 border-slate-200 gap-3">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-[#0B192C] tracking-tight flex items-center">
                   <Sparkles className="w-5 h-5 mr-2 text-[#0067C5]" />
@@ -267,10 +419,32 @@ export const AnalyzePage: React.FC = () => {
                   Semantic candidate retrieval, evidence evaluation, and version intelligence
                 </p>
               </div>
-              <div className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-3 py-1 rounded-md w-fit shadow-2xs">
-                Ref ID: {result.id.slice(0, 8)}
+              <div className="flex items-center space-x-2.5">
+                <div className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-md shadow-2xs">
+                  Ref ID: {result.id.slice(0, 8)}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  disabled={downloadingPdf}
+                  className="inline-flex items-center px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-[#0067C5] hover:bg-[#004C99] transition shadow-xs disabled:opacity-50 cursor-pointer"
+                  title="Download formal PDF analysis report"
+                >
+                  {downloadingPdf ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5"></div>
+                      Generating PDF...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5 mr-1.5" />
+                      Download PDF Report
+                    </>
+                  )}
+                </button>
               </div>
             </div>
+
 
             {/* Version Alert if triggered */}
             <VersionAlert alerts={result.version_alerts} />

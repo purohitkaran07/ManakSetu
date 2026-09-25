@@ -4,6 +4,7 @@ import {
   StandardDetail,
   RelationshipItem,
   AnalysisResponse,
+  PDFExtractResponse,
   GraphResponse,
   HistoryItem,
   HealthResponse,
@@ -51,6 +52,18 @@ apiClient.interceptors.request.use((config) => {
 });
 
 export const api = {
+  // PDF Text Extraction
+  async extractPdf(file: File): Promise<PDFExtractResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<PDFExtractResponse>('/extract-pdf', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return res.data;
+  },
+
   // Requirement Analysis
   async analyzeRequirement(requirement: string, llm_provider: string = 'none'): Promise<AnalysisResponse> {
     const res = await apiClient.post<AnalysisResponse>('/analyze', {
@@ -59,6 +72,7 @@ export const api = {
     });
     return res.data;
   },
+
 
   // Standards
   async getStandards(params?: { q?: string; classification?: string; status?: string }): Promise<Standard[]> {

@@ -34,3 +34,12 @@ def test_explicit_standard_extraction():
     assert "IS 302 (Part 2/Sec 21):2018" in res.explicitly_mentioned_standards
     # Verifies it was NOT converted to 2024
     assert not any("2024" in std for std in res.explicitly_mentioned_standards)
+
+
+def test_generic_dimension_and_power_extraction():
+    prompt = "Procure 120 ceiling fans of 1200 mm sweep for government offices."
+    res = analyzer.analyze(prompt)
+    assert res.quantity == 120
+    assert "sweep" in res.specifications
+    assert "1200 mm sweep" in res.specifications["sweep"]
+

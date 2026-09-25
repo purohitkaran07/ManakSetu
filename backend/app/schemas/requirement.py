@@ -17,3 +17,10 @@ class StructuredRequirement(BaseModel):
     procurement_context: Optional[str] = None
     explicitly_mentioned_standards: List[str] = Field(default_factory=list)
     inferred_fields: List[str] = Field(default_factory=list)
+
+
+class PDFExtractResponse(BaseModel):
+    text: str = Field(..., description="Extracted selectable text from the PDF document")
+    filename: Optional[str] = Field(None, description="Original filename of the uploaded PDF")
+    pages_count: Optional[int] = Field(None, description="Total number of pages processed")
+

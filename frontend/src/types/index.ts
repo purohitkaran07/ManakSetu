@@ -64,6 +64,13 @@ export interface AnalysisResponse {
   created_at: string;
 }
 
+export interface PDFExtractResponse {
+  text: string;
+  filename?: string;
+  pages_count?: number;
+}
+
+
 export interface GraphNodeData extends Record<string, unknown> {
   id: number;
   standard_number: string;
