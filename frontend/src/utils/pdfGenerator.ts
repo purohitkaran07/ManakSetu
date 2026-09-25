@@ -2,8 +2,9 @@ import { jsPDF } from 'jspdf';
 import { AnalysisResponse } from '../types';
 
 /**
- * Generates an institutional, government-styled PDF report of the ManakSetu analysis results.
- * Completely client-side generation using jsPDF without external API calls or latency.
+ * Generates an institutional, government-styled PDF report of ManakSetu analysis results.
+ * Fully client-side generation using jsPDF with safe Latin-1 / standard Helvetica fonts.
+ * Uses dynamic cursor tracking to prevent awkward page splits and large blank gaps.
  */
 export const generateAnalysisPDF = (data: AnalysisResponse): void => {
   const doc = new jsPDF({
@@ -14,167 +15,238 @@ export const generateAnalysisPDF = (data: AnalysisResponse): void => {
 
   const pageWidth = 210;
   const pageHeight = 297;
-  const margin = 15;
-  const contentWidth = pageWidth - margin * 2;
-  let currentY = 15;
+  const margin = 14;
+  const contentWidth = pageWidth - margin * 2; // 182 mm
+  const maxY = pageHeight - 18; // 279 mm (above footer)
 
-  const checkPageBreak = (neededHeight: number) => {
-    if (currentY + neededHeight > pageHeight - 20) {
-      doc.addPage();
-      currentY = 15;
-      drawHeaderRunning();
-    }
+  let currentY = 12;
+
+  // Helper: Sanitize string to safe ASCII to avoid any font encoding corruption in jsPDF
+  const cleanText = (str: string | undefined | null): string => {
+    if (!str) return '';
+    return str
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, '-')
+      .replace(/[\u0900-\u097F]/g, '') // Strip Devanagari Unicode to prevent garbage chars in standard Helvetica
+      .replace(/\s+/g, ' ')
+      .trim();
   };
 
-  const drawHeaderRunning = () => {
+  // Helper: Add page and draw running header
+  const addReportPage = () => {
+    doc.addPage();
+    currentY = 18;
+    drawRunningHeader();
+  };
+
+  // Helper: Draw running header on page 2+
+  const drawRunningHeader = () => {
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
-    doc.text('MANAKSETU • AI Standards Decision Support System', margin, 10);
+    doc.text('MANAKSETU | AI Standards Decision Support System', margin, 10);
     doc.text(`Ref ID: ${data.id.slice(0, 8)}`, pageWidth - margin, 10, { align: 'right' });
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.3);
     doc.line(margin, 12, pageWidth - margin, 12);
   };
 
+  // Helper: Check space and add page if needed
+  const ensureSpace = (neededHeight: number) => {
+    if (currentY + neededHeight > maxY) {
+      addReportPage();
+    }
+  };
+
+  // ==========================================
+  // PAGE 1: HEADER & INSTITUTIONAL BRANDING
+  // ==========================================
+
   // 1. Top Decorative Government Color Strips (Saffron, White, Green)
-  doc.setFillColor(255, 153, 51); // Saffron
-  doc.rect(margin, currentY, contentWidth / 3, 2, 'F');
+  doc.setFillColor(255, 153, 51); // India Saffron
+  doc.rect(margin, currentY, contentWidth / 3, 2.5, 'F');
   doc.setFillColor(241, 245, 249); // Neutral Light
-  doc.rect(margin + contentWidth / 3, currentY, contentWidth / 3, 2, 'F');
+  doc.rect(margin + contentWidth / 3, currentY, contentWidth / 3, 2.5, 'F');
   doc.setFillColor(19, 136, 8); // India Green
-  doc.rect(margin + (contentWidth * 2) / 3, currentY, contentWidth / 3, 2, 'F');
-  currentY += 5;
+  doc.rect(margin + (contentWidth * 2) / 3, currentY, contentWidth / 3, 2.5, 'F');
+  currentY += 6;
 
   // 2. Main Title Banner
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(17);
   doc.setTextColor(11, 25, 44); // Deep Navy (#0B192C)
-  doc.text('MANAKSETU (मानकसेतु)', margin, currentY + 5);
+  doc.text('MANAKSETU', margin, currentY + 4);
 
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(0, 103, 197); // Institutional Blue (#0067C5)
-  doc.text('From Requirement to the Right Standard', margin, currentY + 10);
+  doc.text('From Requirement to the Right Standard', margin, currentY + 9);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text('Government / BIS-Oriented AI Standards Decision Support Prototype', margin, currentY + 15);
+  doc.text('AI Standards Decision Support System | Technical Recommendation Report', margin, currentY + 14);
 
-  // Metadata Box on Top Right
+  // Metadata Block (Top Right)
   const dateStr = new Date(data.created_at || Date.now()).toLocaleString('en-IN', {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(51, 65, 85);
-  doc.text(`Report ID: ${data.id.slice(0, 13)}`, pageWidth - margin, currentY + 5, { align: 'right' });
-  doc.text(`Analysis Date: ${dateStr}`, pageWidth - margin, currentY + 10, { align: 'right' });
-  doc.text(`Decision Model: 384-d MiniLM`, pageWidth - margin, currentY + 15, { align: 'right' });
+  doc.text(`Report ID: ${data.id.slice(0, 13)}`, pageWidth - margin, currentY + 4, { align: 'right' });
+  doc.text(`Analysis Date: ${dateStr}`, pageWidth - margin, currentY + 8.5, { align: 'right' });
+  doc.text('Decision Engine: 384-d MiniLM (L2-Norm)', pageWidth - margin, currentY + 13, { align: 'right' });
 
-  currentY += 21;
+  currentY += 19;
   doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.5);
+  doc.setLineWidth(0.4);
   doc.line(margin, currentY, pageWidth - margin, currentY);
-  currentY += 6;
+  currentY += 5;
 
-  // 3. Input Requirement Section
-  checkPageBreak(30);
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, currentY, contentWidth, 24, 2, 2, 'FD');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(11, 25, 44);
-  doc.text('1. INPUT PROCUREMENT REQUIREMENT', margin + 4, currentY + 5);
-
+  // ==========================================
+  // SECTION 1: INPUT PROCUREMENT REQUIREMENT
+  // ==========================================
+  const reqTextClean = cleanText(data.original_requirement);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(30, 41, 59);
-  const wrappedReq = doc.splitTextToSize(data.original_requirement, contentWidth - 8);
-  doc.text(wrappedReq, margin + 4, currentY + 11);
-  currentY += 28;
+  const wrappedReq = doc.splitTextToSize(reqTextClean, contentWidth - 8);
+  const reqBoxHeight = Math.max(wrappedReq.length * 4 + 9, 16);
 
-  // 4. Requirement Summary Entity Breakdown
-  checkPageBreak(40);
+  ensureSpace(reqBoxHeight + 8);
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, currentY, contentWidth, reqBoxHeight, 1.5, 1.5, 'FD');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(8);
   doc.setTextColor(11, 25, 44);
-  doc.text('2. EXTRACTED REQUIREMENT SUMMARY', margin, currentY);
-  currentY += 4;
+  doc.text('1. INPUT PROCUREMENT REQUIREMENT', margin + 4, currentY + 4.5);
 
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+  doc.text(wrappedReq, margin + 4, currentY + 9.5);
+  currentY += reqBoxHeight + 5;
+
+  // ==========================================
+  // SECTION 2: EXTRACTED REQUIREMENT SUMMARY
+  // ==========================================
   const req = data.structured_requirement || {};
-  const specsStr =
-    req.specifications && Object.keys(req.specifications).length > 0
-      ? Object.entries(req.specifications)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join(', ')
-      : 'None detected';
+  const specsObj = req.specifications || {};
+  const specsStr = Object.keys(specsObj).length > 0
+    ? Object.entries(specsObj).map(([k, v]) => `${k}: ${v}`).join(', ')
+    : 'None detected';
 
-  const summaryItems = [
-    ['Product:', req.product || 'Not explicitly named'],
-    ['Product Category:', req.product_category || 'General / Unclassified'],
-    ['Quantity:', req.quantity ? `${req.quantity} units` : 'Not specified'],
-    ['Application Domain:', req.application || 'Not specified'],
-    ['Installation Type:', req.installation || 'Not specified'],
-    ['Procurement Context:', req.procurement_context || 'Standard Public Procurement'],
-    ['Technical Specifications:', specsStr],
+  const summaryGrid = [
+    { label: 'Product:', val: cleanText(req.product) || 'Not specified' },
+    { label: 'Category:', val: cleanText(req.product_category) || 'General / Unclassified' },
+    { label: 'Quantity:', val: req.quantity ? `${req.quantity} units` : 'Not specified' },
+    { label: 'Application:', val: cleanText(req.application) || 'Not specified' },
+    { label: 'Installation:', val: cleanText(req.installation) || 'Not specified' },
+    { label: 'Procurement Context:', val: cleanText(req.procurement_context) || 'Public Procurement' },
   ];
 
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  summaryItems.forEach(([label, value]) => {
-    checkPageBreak(6);
+  doc.setTextColor(11, 25, 44);
+  doc.text('2. EXTRACTED REQUIREMENT SUMMARY', margin, currentY + 3);
+  currentY += 5;
+
+  // Two-column grid container
+  const colWidth = (contentWidth - 4) / 2;
+  const gridHeight = 25;
+  ensureSpace(gridHeight + 10);
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(margin, currentY, contentWidth, gridHeight, 1.5, 1.5, 'D');
+
+  doc.setFontSize(7.5);
+  for (let i = 0; i < summaryGrid.length; i++) {
+    const item = summaryGrid[i];
+    const isRightCol = i % 2 === 1;
+    const rowIdx = Math.floor(i / 2);
+    const itemX = margin + (isRightCol ? colWidth + 4 : 4);
+    const itemY = currentY + 4.5 + rowIdx * 5.2;
+
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(71, 85, 105);
-    doc.text(label, margin + 2, currentY);
+    doc.text(item.label, itemX, itemY);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    const wrappedVal = doc.splitTextToSize(value, contentWidth - 55);
-    doc.text(wrappedVal, margin + 50, currentY);
-    currentY += Math.max(wrappedVal.length * 4, 5);
-  });
-  currentY += 4;
-
-  // 5. Version Alerts (if present)
-  if (data.version_alerts && data.version_alerts.length > 0) {
-    checkPageBreak(25);
-    doc.setFillColor(254, 243, 199); // Amber-100
-    doc.setDrawColor(245, 158, 11); // Amber-500
-    doc.roundedRect(margin, currentY, contentWidth, 20, 2, 2, 'FD');
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(146, 64, 14); // Amber-800
-    doc.text('3. REGULATORY / VERSION DEPRECATION ALERT', margin + 4, currentY + 5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    data.version_alerts.forEach((alert) => {
-      const alertMsg = doc.splitTextToSize(
-        `• ${alert.explicit_standard} is superseded by ${alert.superseding_standard}. ${alert.message}`,
-        contentWidth - 8
-      );
-      doc.text(alertMsg, margin + 4, currentY + 11);
-    });
-    currentY += 25;
+    doc.text(cleanText(item.val), itemX + 32, itemY);
   }
 
-  // 6. Recommended Indian Standards
-  checkPageBreak(35);
+  // Specifications row at the bottom of the grid
+  const specsY = currentY + 20.5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Specifications:', margin + 4, specsY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(15, 23, 42);
+  const wrappedSpecs = doc.splitTextToSize(cleanText(specsStr), contentWidth - 42);
+  doc.text(wrappedSpecs[0] || 'None detected', margin + 36, specsY);
+
+  currentY += gridHeight + 6;
+
+  // ==========================================
+  // SECTION 3: VERSION / REGULATORY ALERTS
+  // ==========================================
+  if (data.version_alerts && data.version_alerts.length > 0) {
+    const alert = data.version_alerts[0];
+    const alertMsg = cleanText(
+      `Citation ${alert.explicit_standard} is superseded by active edition ${alert.superseding_standard}. ${alert.message}`
+    );
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    const wrappedAlert = doc.splitTextToSize(alertMsg, contentWidth - 10);
+    const alertHeight = wrappedAlert.length * 3.8 + 8;
+
+    ensureSpace(alertHeight + 4);
+
+    doc.setFillColor(254, 243, 199); // Amber-100
+    doc.setDrawColor(245, 158, 11); // Amber-500
+    doc.setLineWidth(0.4);
+    doc.roundedRect(margin, currentY, contentWidth, alertHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(146, 64, 14); // Amber-800
+    doc.text('! REGULATORY / VERSION DEPRECATION ALERT', margin + 4, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 53, 15);
+    doc.text(wrappedAlert, margin + 4, currentY + 8.5);
+
+    currentY += alertHeight + 5;
+  }
+
+  // ==========================================
+  // SECTION 4: RECOMMENDED INDIAN STANDARDS
+  // ==========================================
+  const recCount = data.recommendations ? data.recommendations.length : 0;
+  ensureSpace(12);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.setTextColor(11, 25, 44);
-  doc.text(`3. RECOMMENDED INDIAN STANDARDS (${data.recommendations.length})`, margin, currentY);
+  doc.text(`3. RECOMMENDED INDIAN STANDARDS (${recCount})`, margin, currentY + 2);
   currentY += 5;
 
-  if (data.recommendations.length === 0) {
+  if (recCount === 0) {
+    ensureSpace(16);
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(margin, currentY, contentWidth, 14, 2, 2, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, currentY, contentWidth, 14, 1.5, 1.5, 'FD');
     doc.setFont('helvetica', 'italic');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
     doc.text(
       'No applicable standards matched the input requirement within the current knowledge slice.',
@@ -184,120 +256,184 @@ export const generateAnalysisPDF = (data: AnalysisResponse): void => {
     currentY += 18;
   } else {
     data.recommendations.forEach((item, idx) => {
-      checkPageBreak(45);
       const std = item.standard;
+      const stdNum = cleanText(std.standard_number);
+      const title = cleanText(std.title);
+      const classification = cleanText(std.classification) || 'Electrical & Electronics';
+      const scheme = cleanText(item.certification_status || std.certification_status) || 'BIS Standard';
+      const status = cleanText(std.status).toUpperCase() || 'ACTIVE';
+      const confidence = (item.confidence || 'High').toUpperCase();
+      const relevancePct = (item.relevance * 100).toFixed(1);
 
-      // Card Container
+      // Pre-calculate wrapped lines to determine exact card height
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      const wrappedTitle = doc.splitTextToSize(title, contentWidth - 8);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.2);
+      const evidenceLines = item.evidence && item.evidence.length > 0
+        ? item.evidence.map((ev) => `- ${cleanText(ev)}`)
+        : [`- Direct technical alignment: ${cleanText(item.reason)}`];
+      
+      const allWrappedEvidence: string[] = [];
+      evidenceLines.forEach((line) => {
+        const split = doc.splitTextToSize(line, contentWidth - 12);
+        allWrappedEvidence.push(...split);
+      });
+
+      // Card Height calculation
+      // Top bar: 6mm
+      // Title: wrappedTitle.length * 3.8mm
+      // Metadata (class / scheme): 4.5mm
+      // Evidence header: 4mm
+      // Evidence lines: allWrappedEvidence.length * 3.4mm
+      // Padding bottom: 4mm
+      const cardHeight =
+        6 +
+        wrappedTitle.length * 3.8 +
+        4.5 +
+        4 +
+        allWrappedEvidence.length * 3.4 +
+        4;
+
+      // Ensure the ENTIRE card fits on the page; if not, move whole card to next page
+      ensureSpace(cardHeight + 4);
+
+      // Draw Card Container
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(margin, currentY, contentWidth, 38, 2, 2, 'D');
+      doc.setLineWidth(0.35);
+      doc.roundedRect(margin, currentY, contentWidth, cardHeight, 1.5, 1.5, 'D');
 
-      // Top bar inside card
+      // Top Header Strip inside card
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(margin, currentY, contentWidth, 7, 2, 2, 'F');
+      doc.roundedRect(margin, currentY, contentWidth, 6, 1.5, 1.5, 'F');
+      // Overwrite bottom rounded corners of strip
+      doc.rect(margin, currentY + 3, contentWidth, 3, 'F');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(0, 103, 197);
-      doc.text(`#${idx + 1}  ${std.standard_number}`, margin + 3, currentY + 5);
+      doc.text(`#${idx + 1}  ${stdNum}`, margin + 3.5, currentY + 4.2);
 
-      const statusBadge = `[${std.status.toUpperCase()} • ${item.confidence.toUpperCase()} CONFIDENCE • RELEVANCE: ${(item.relevance * 100).toFixed(1)}%]`;
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setTextColor(15, 118, 110); // Teal
-      doc.text(statusBadge, pageWidth - margin - 3, currentY + 5, { align: 'right' });
+      const badgeText = `[ ${status} | ${confidence} CONFIDENCE | RELEVANCE: ${relevancePct}% ]`;
+      doc.text(badgeText, pageWidth - margin - 3.5, currentY + 4.2, { align: 'right' });
+
+      let cardCursorY = currentY + 9.5;
 
       // Title
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      const wrappedTitle = doc.splitTextToSize(std.title, contentWidth - 6);
-      doc.text(wrappedTitle, margin + 3, currentY + 12);
+      doc.text(wrappedTitle, margin + 3.5, cardCursorY);
+      cardCursorY += wrappedTitle.length * 3.8;
 
-      // Certification & Classification
+      // Classification & Scheme
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
+      doc.setFontSize(7.2);
       doc.setTextColor(71, 85, 105);
-      doc.text(
-        `Classification: ${std.classification || 'Electrical'}  |  Scheme: ${item.certification_status || std.certification_status || 'BIS Standard'}`,
-        margin + 3,
-        currentY + 18
-      );
+      doc.text(`Classification: ${classification}  |  Certification: ${scheme}`, margin + 3.5, cardCursorY);
+      cardCursorY += 4.5;
 
-      // Evidence & Reason
+      // Evidence Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Evidence & Technical Grounds:', margin + 3.5, cardCursorY);
+      cardCursorY += 3.5;
+
+      // Evidence Bullets
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
+      doc.setFontSize(7.2);
       doc.setTextColor(30, 41, 59);
-      const evidenceLines = item.evidence && item.evidence.length > 0
-        ? `Evidence: ${item.evidence.join('; ')}`
-        : `Rationale: ${item.reason}`;
-      const wrappedEvidence = doc.splitTextToSize(evidenceLines, contentWidth - 6);
-      doc.text(wrappedEvidence, margin + 3, currentY + 23);
+      doc.text(allWrappedEvidence, margin + 5, cardCursorY);
 
-      currentY += 42;
+      currentY += cardHeight + 4;
     });
   }
 
-  // 7. Candidate / Normative Standards (if any)
+  // ==========================================
+  // SECTION 5: CANDIDATE & NORMATIVE STANDARDS
+  // ==========================================
   if (data.candidate_standards && data.candidate_standards.length > 0) {
-    checkPageBreak(30);
+    const candHeight = data.candidate_standards.length * 4.5 + 8;
+    ensureSpace(Math.min(candHeight, 35));
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text(`4. NORMATIVELY REFERENCED & CANDIDATE STANDARDS (${data.candidate_standards.length})`, margin, currentY);
-    currentY += 4;
+    doc.text(`4. NORMATIVELY REFERENCED & CANDIDATE STANDARDS (${data.candidate_standards.length})`, margin, currentY + 2);
+    currentY += 5;
 
     data.candidate_standards.forEach((cand) => {
-      checkPageBreak(12);
+      ensureSpace(6);
+      const cStd = cand.standard;
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(`• ${cand.standard.standard_number}`, margin + 2, currentY);
+      doc.text(`- ${cleanText(cStd.standard_number)}`, margin + 2, currentY);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setTextColor(71, 85, 105);
-      const shortTitle = doc.splitTextToSize(`- ${cand.standard.title}`, contentWidth - 50);
-      doc.text(shortTitle, margin + 45, currentY);
-      currentY += Math.max(shortTitle.length * 3.5, 5);
+      const cTitle = cleanText(cStd.title);
+      const wrappedCTitle = doc.splitTextToSize(cTitle, contentWidth - 45);
+      doc.text(wrappedCTitle[0] || '', margin + 42, currentY);
+      currentY += 4.5;
     });
-    currentY += 4;
+    currentY += 3;
   }
 
-  // 8. Official Verification Disclaimer Notice
-  checkPageBreak(25);
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, currentY, contentWidth, 18, 1.5, 1.5, 'FD');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text('OFFICIAL BIS VERIFICATION NOTICE & DISCLAIMER', margin + 3, currentY + 4.5);
+  // ==========================================
+  // SECTION 6: OFFICIAL BIS VERIFICATION NOTICE
+  // ==========================================
+  const disclaimerText =
+    'DISCLAIMER: Recommendations are provided as an AI-assisted decision-support reference and must be verified against current official publications, amendments, and Quality Control Orders (QCOs) issued by the Bureau of Indian Standards (BIS) and relevant ministries. ManakSetu is an AI decision-support prototype and does not issue legal compliance certificates or official certifications.';
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(100, 116, 139);
-  const disclaimerText = doc.splitTextToSize(
-    'Recommendations are provided as an AI-assisted decision-support reference and should be verified against the latest applicable Bureau of Indian Standards (BIS) publications, gazette notifications, and Quality Control Orders (QCOs). ManakSetu is an AI decision-support prototype and does not issue legal compliance certificates.',
-    contentWidth - 6
-  );
-  doc.text(disclaimerText, margin + 3, currentY + 9);
-  currentY += 22;
+  doc.setFontSize(6.8);
+  const wrappedDisclaimer = doc.splitTextToSize(disclaimerText, contentWidth - 8);
+  const discBoxHeight = wrappedDisclaimer.length * 3.2 + 8;
 
-  // 9. Footers on all pages
+  ensureSpace(discBoxHeight + 4);
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, currentY, contentWidth, discBoxHeight, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(71, 85, 105);
+  doc.text('OFFICIAL BIS VERIFICATION NOTICE & DISCLAIMER', margin + 4, currentY + 4);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(wrappedDisclaimer, margin + 4, currentY + 8);
+  currentY += discBoxHeight + 4;
+
+  // ==========================================
+  // RUNNING FOOTERS (ALL PAGES)
+  // ==========================================
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
-    doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
-    doc.text('ManakSetu • Government / BIS-oriented AI recommendation prototype', margin, pageHeight - 8);
-    doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(margin, pageHeight - 11, pageWidth - margin, pageHeight - 11);
+    doc.text('MANAKSETU | Government / BIS-oriented AI recommendation prototype', margin, pageHeight - 7);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
 
-  // Download the generated PDF
+  // Save the PDF with standardized filename
   const filename = `ManakSetu-Report-${data.id.slice(0, 8)}.pdf`;
   doc.save(filename);
 };
