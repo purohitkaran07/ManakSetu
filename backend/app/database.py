@@ -21,6 +21,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def init_db():
+    import app.models  # noqa: F401 - ensure models are registered on Base
+    Base.metadata.create_all(bind=engine)
+
+
+# Auto-initialize tables safely (idempotent CREATE TABLE IF NOT EXISTS)
+init_db()
+
+
 def get_db():
     db = SessionLocal()
     try:

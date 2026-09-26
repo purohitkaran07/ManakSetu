@@ -8,6 +8,11 @@ import {
   GraphResponse,
   HistoryItem,
   HealthResponse,
+  User,
+  AuthResponse,
+  SignUpRequest,
+  LoginRequest,
+  MessageResponse,
 } from '../types';
 
 /**
@@ -37,7 +42,7 @@ export const apiClient = axios.create({
   },
 });
 
-// Guard against duplicate /api in path when baseURL already ends with /api
+// Guard against duplicate /api in path and attach auth token if available
 apiClient.interceptors.request.use((config) => {
   if (config.url) {
     if (config.baseURL?.endsWith('/api')) {
@@ -48,10 +53,37 @@ apiClient.interceptors.request.use((config) => {
       }
     }
   }
+
+  const token = localStorage.getItem('manaksetu_auth_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
   return config;
 });
 
 export const api = {
+  // Authentication
+  async signup(data: SignUpRequest): Promise<AuthResponse> {
+    const res = await apiClient.post<AuthResponse>('/auth/signup', data);
+    return res.data;
+  },
+
+  async login(data: LoginRequest): Promise<AuthResponse> {
+    const res = await apiClient.post<AuthResponse>('/auth/login', data);
+    return res.data;
+  },
+
+  async getCurrentUser(): Promise<User> {
+    const res = await apiClient.get<User>('/auth/me');
+    return res.data;
+  },
+
+  async logout(): Promise<MessageResponse> {
+    const res = await apiClient.post<MessageResponse>('/auth/logout');
+    return res.data;
+  },
+
   // PDF Text Extraction
   async extractPdf(file: File): Promise<PDFExtractResponse> {
     const formData = new FormData();

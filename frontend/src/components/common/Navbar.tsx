@@ -4,20 +4,19 @@ import {
   Menu,
   X,
   Search,
-  ArrowRight,
-  Info,
-  Sparkles,
   ChevronDown,
-  Globe,
-  Sliders,
-  Check,
+  LogOut,
 } from 'lucide-react';
 import { EmblemOfIndia, BISLogo, DigitalIndiaLogo } from './GovLogos';
+import { useAuth } from '../../context/AuthContext';
+import { AuthModal } from './AuthModal';
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const [contrastMode, setContrastMode] = useState(false);
   const [fontSizeLevel, setFontSizeLevel] = useState<'sm' | 'md' | 'lg'>('md');
@@ -207,22 +206,52 @@ export const Navbar: React.FC = () => {
               ))}
             </nav>
 
-            {/* Right: Institutional Actions (Login & Sign Up) */}
+            {/* Right: Institutional Actions (Login & Sign Up or Authenticated User) */}
             <div className="hidden sm:flex items-center space-x-2.5">
-              <button
-                type="button"
-                onClick={() => setShowAuthModal(true)}
-                className="bg-[#0067C5] hover:bg-[#0054A3] text-white px-4 py-1.5 rounded-md text-xs font-bold transition shadow-xs"
-              >
-                Login
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAuthModal(true)}
-                className="border border-white/80 hover:bg-white hover:text-[#0B192C] text-white px-3.5 py-1.5 rounded-md text-xs font-semibold transition"
-              >
-                Sign Up
-              </button>
+              {isAuthenticated && user ? (
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 bg-[#142C4C] px-3 py-1.5 rounded-lg border border-blue-400/20 text-xs">
+                    <div className="w-5 h-5 rounded-full bg-[#0067C5] text-white flex items-center justify-center text-[10px] font-black uppercase">
+                      {user.full_name ? user.full_name.charAt(0) : 'U'}
+                    </div>
+                    <span className="font-semibold text-white tracking-wide truncate max-w-[130px]" title={user.full_name}>
+                      Hi, {user.full_name.split(' ')[0]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    title="Sign out of your account"
+                    className="inline-flex items-center space-x-1.5 bg-slate-800/80 hover:bg-rose-950/60 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-400/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthModalMode('login');
+                      setAuthModalOpen(true);
+                    }}
+                    className="bg-[#0067C5] hover:bg-[#0054A3] text-white px-4 py-1.5 rounded-md text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthModalMode('signup');
+                      setAuthModalOpen(true);
+                    }}
+                    className="border border-white/80 hover:bg-white hover:text-[#0B192C] text-white px-3.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer"
+                  >
+                    Sign Up
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Mobile Hamburger Button */}
@@ -274,83 +303,65 @@ export const Navbar: React.FC = () => {
               </NavLink>
             ))}
 
-            <div className="pt-3 border-t border-slate-800 flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setShowAuthModal(true);
-                }}
-                className="flex-1 bg-[#0067C5] text-white py-2 rounded-md text-xs font-bold text-center"
-              >
-                Login
-              </button>
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setShowAuthModal(true);
-                }}
-                className="flex-1 border border-white/60 text-white py-2 rounded-md text-xs font-bold text-center"
-              >
-                Sign Up
-              </button>
-            </div>
+            {isAuthenticated && user ? (
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <div className="flex items-center space-x-2.5 px-3 py-2 bg-[#142C4C] rounded-lg text-xs">
+                  <div className="w-7 h-7 rounded-full bg-[#0067C5] text-white flex items-center justify-center text-xs font-bold uppercase">
+                    {user.full_name ? user.full_name.charAt(0) : 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-white truncate">{user.full_name}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    logout();
+                  }}
+                  className="w-full inline-flex items-center justify-center space-x-1.5 bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/50 py-2 rounded-md text-xs font-bold transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            ) : (
+              <div className="pt-3 border-t border-slate-800 flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setAuthModalMode('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="flex-1 bg-[#0067C5] text-white py-2 rounded-md text-xs font-bold text-center"
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setAuthModalMode('signup');
+                    setAuthModalOpen(true);
+                  }}
+                  className="flex-1 border border-white/60 text-white py-2 rounded-md text-xs font-bold text-center"
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
           </div>
         )}
       </header>
 
-      {/* Prototype Direct-Access Authentication Modal */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-slate-900 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-                  <Info className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">SIH 2026 Direct Access</h3>
-                  <p className="text-xs text-slate-500">Bureau of Indian Standards Prototype</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              In accordance with evaluation guidelines, user authentication is kept in direct access demonstration mode.
-              All AI requirement analysis, BIS reference standards, and knowledge graph tools are available immediately without login credentials.
-            </p>
-
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-900 space-y-1">
-              <span className="font-bold flex items-center">
-                <Sparkles className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                All Capabilities Active:
-              </span>
-              <ul className="list-disc list-inside text-[11px] text-blue-800 space-y-0.5 pt-1">
-                <li>384-dimensional semantic embedding matching</li>
-                <li>Version intelligence & superseded edition alerts</li>
-                <li>Live database relationships graph</li>
-              </ul>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Link
-                to="/analyze"
-                onClick={() => setShowAuthModal(false)}
-                className="bg-[#0B192C] hover:bg-[#004C99] text-white px-5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5"
-              >
-                <span>Continue to AI Analyzer</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Functional Authentication Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setAuthModalOpen(false)}
+      />
     </>
   );
 };

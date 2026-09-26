@@ -127,3 +127,31 @@ export interface HealthResponse {
     status: string;
   };
 }
+
+export interface User {
+  id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface SignUpRequest {
+  full_name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
